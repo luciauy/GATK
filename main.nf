@@ -32,19 +32,19 @@ params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : 
 if (params.fasta) {
     Channel.fromPath(params.fasta)
            .ifEmpty { exit 1, "fasta annotation file not found: ${params.fasta}" }
-           .into { fasta; fasta_bwa }
+           .into { fasta; fasta_bwa; fasta_baserecalibrator }
 }
 params.fai = params.genome ? params.genomes[ params.genome ].fai ?: false : false
 if (params.fai) {
     Channel.fromPath(params.fai)
            .ifEmpty { exit 1, "fai annotation file not found: ${params.fai}" }
-           .into { fai; fai_bwa }
+           .into { fai; fai_bwa; fai_baserecalibrator }
 }
 params.dict = params.genome ? params.genomes[ params.genome ].dict ?: false : false
 if (params.dict) {
     Channel.fromPath(params.dict)
            .ifEmpty { exit 1, "dict annotation file not found: ${params.dict}" }
-           .into { dict; dict_bwa }
+           .into { dict; dict_bwa; dict_baserecalibrator}
 }
 params.dbsnp = params.genome ? params.genomes[ params.genome ].dbsnp ?: false : false
 if (params.dbsnp) {
@@ -138,8 +138,6 @@ if (params.bwa_index_sa) {
 }
 
 
-bwa_index = Channel.from(bwa_index_amb).merge(bwa_index_ann, bwa_index_bwt, bwa_index_pac, bwa_index_sa).collect()
-
 
 /*
  * Create a channel for input read files
@@ -205,116 +203,129 @@ process gunzip_omni {
 }
 
 process BWA {
-  tag "$reads"
+  tag "$params.reads_prefix"
 	publishDir "${params.outdir}/MappedRead"
 	container 'kathrinklee/bwa:latest'
 
 	input:
 	file fasta from fasta_bwa
-	file bwa_index from bwa_index
-	file reads from reads_bwa
+	file bwa_index_amb from bwa_index_amb
+  file bwa_index_ann from bwa_index_ann
+  file bwa_index_bwt from bwa_index_bwt
+  file bwa_index_pac from bwa_index_pac
+  file bwa_index_sa from bwa_index_sa
+	file reads from reads_bwa.collect()
 
 	output:
-	file 'aln-pe.sam' into samfile
+	file 'aln-pe.sam' into sam
 
 	"""
-	bwa mem -M -R '@RG\\tID:${params.reads_prefix}\\tSM:${params.reads_prefix}\\tPL:Illumina' $fasta *.${params.reads_extension} > aln-pe.sam
+	bwa mem -M -R '@RG\\tID:${params.reads_prefix}\\tSM:${params.reads_prefix}\\tPL:Illumina' $fasta $reads > aln-pe.sam
 	"""
 
 }
 
-// process BWA_sort {
-// 	publishDir "${params.outdir}/MappedRead"
-// 	container 'comics/samtools:latest'
-//
-// 	input:
-// 	file samfile
-//
-// 	output:
-// 	file 'aln-pe-sorted.bam' into bam_sort
-//
-// 	"""
-// 	samtools sort -o aln-pe-sorted.bam -O BAM $samfile
-// 	"""
-//
-// }
-//
-// process MarkDuplicates {
-// 	publishDir "${params.outdir}/MappedRead"
-// 	container 'broadinstitute/gatk'
-//
-// 	input:
-// 	file bam_sort
-//
-// 	output:
-// 	file 'aln-pe_MarkDup.bam' into bam_markdup
-//
-// 	"""
-// 	gatk MarkDuplicates -I $bam_sort -M metrics.txt -O aln-pe_MarkDup.bam
-// 	"""
-//
-// }
-//
-// process BaseRecalibrator {
-// 	publishDir "${params.outdir}/BaseRecalibrator"
-// 	container 'broadinstitute/gatk:latest'
-//
-// 	input:
-// 	file reference
-// 	file reference_fai
-// 	file reference_dict
-// 	file bam_markdup
-// 	file dbsnp
-// 	file dbsnp_idx
-// 	file golden_indel
-// 	file golden_indel_idx
-//
-// 	output:
-// 	file 'recal_data.table' into BaseRecalibrator_table
-//
-// 	"""
-// 	gatk BaseRecalibrator \
-// 	-I $bam_markdup \
-// 	--known-sites $dbsnp \
-// 	--known-sites $golden_indel \
-// 	-O recal_data.table \
-// 	-R $reference
-// 	"""
-// }
-//
-// process ApplyBQSR {
-// 	publishDir "${params.outdir}/BaseRecalibrator"
-// 	container 'broadinstitute/gatk:latest'
-//
-// 	input:
-// 	file BaseRecalibrator_table
-// 	file bam_markdup
-//
-// 	output:
-// 	file 'aln-pe_bqsr.bam' into bam_bqsr
-//
-// 	script:
-// 	"""
-// 	gatk ApplyBQSR -I $bam_markdup -bqsr $BaseRecalibrator_table -O aln-pe_bqsr.bam
-// 	"""
-// }
-//
+process BWA_sort {
+  tag "$sam"
+	publishDir "${params.outdir}/MappedRead"
+	container 'comics/samtools:latest'
+
+	input:
+	file sam from sam
+
+	output:
+	file 'aln-pe-sorted.bam' into bam_sort
+
+	"""
+	samtools sort -o aln-pe-sorted.bam -O BAM $sam
+	"""
+
+}
+
+process MarkDuplicates {
+  tag "$bam_sort"
+	publishDir "${params.outdir}/MappedRead"
+	container 'broadinstitute/gatk'
+
+	input:
+	file bam_sort from bam_sort
+
+	output:
+	file 'aln-pe_MarkDup.bam' into bam_markdup_baserecalibrator, bam_markdup_applybqsr
+
+	"""
+	gatk MarkDuplicates -I $bam_sort -M metrics.txt -O aln-pe_MarkDup.bam
+	"""
+
+}
+
+process BaseRecalibrator {
+  tag "$bam_markdup"
+	publishDir "${params.outdir}/BaseRecalibrator"
+	container 'broadinstitute/gatk:latest'
+
+	input:
+	file fasta from fasta_baserecalibrator
+	file fai from fai_baserecalibrator
+	file dict from dict_baserecalibrator
+	file bam_markdup from bam_markdup_baserecalibrator
+	file dbsnp from dbsnp
+	file dbsnp_idx from dbsnp_idx
+	file golden_indel from golden_indel
+	file golden_indel_idx from golden_indel_idx
+
+	output:
+	file 'recal_data.table' into baserecalibrator_table
+
+	"""
+	gatk BaseRecalibrator \
+	-I $bam_markdup \
+	--known-sites $dbsnp \
+	--known-sites $golden_indel \
+	-O recal_data.table \
+	-R $fasta
+	"""
+}
+
+process ApplyBQSR {
+  tag "$baserecalibrator_table"
+	publishDir "${params.outdir}/BaseRecalibrator"
+	container 'broadinstitute/gatk:latest'
+
+	input:
+	file baserecalibrator_table from baserecalibrator_table
+	file bam_markdup from bam_markdup_applybqsr
+
+	output:
+	file 'aln-pe_bqsr.bam' into bam_bqsr
+
+	script:
+	"""
+	gatk ApplyBQSR -I $bam_markdup -bqsr $baserecalibrator_table -O aln-pe_bqsr.bam
+	"""
+}
+
 // process HaplotypeCaller {
+//   tag "$bam_bqsr"
 // 	publishDir "${params.outdir}/HaplotypeCaller"
 // 	container 'broadinstitute/gatk:latest'
 //
 // 	input:
-// 	file reference
-// 	file reference_fai
-// 	file reference_dict
-// 	file bam_bqsr
+// 	file fasta from
+// 	file fai from
+// 	file dict from
+// 	file bam_bqsr from bam_bqsr
 //
 // 	output:
 // 	file 'haplotypecaller.g.vcf' into haplotypecaller_gvcf
 //
 // 	script:
 // 	"""
-// 	gatk HaplotypeCaller -I $bam_bqsr -O haplotypecaller.g.vcf --emit-ref-confidence GVCF -R $reference
+//   gatk HaplotypeCaller  \
+//   -R $fasta \
+//   -I $bam_bqsr \
+//   -O haplotypecaller.g.vcf \
+//   -ERC GVCF
 // 	"""
 // }
 //
