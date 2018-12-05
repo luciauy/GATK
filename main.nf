@@ -34,111 +34,111 @@ if (params.fasta) {
            .ifEmpty { exit 1, "fasta annotation file not found: ${params.fasta}" }
            .into { fasta; fasta_bwa }
 }
-params.fai = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.fai = params.genome ? params.genomes[ params.genome ].fai ?: false : false
 if (params.fai) {
     Channel.fromPath(params.fai)
            .ifEmpty { exit 1, "fai annotation file not found: ${params.fai}" }
            .into { fai; fai_bwa }
 }
-params.dict = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.dict = params.genome ? params.genomes[ params.genome ].dict ?: false : false
 if (params.dict) {
     Channel.fromPath(params.dict)
            .ifEmpty { exit 1, "dict annotation file not found: ${params.dict}" }
            .into { dict; dict_bwa }
 }
-params.dbsnp = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.dbsnp = params.genome ? params.genomes[ params.genome ].dbsnp ?: false : false
 if (params.dbsnp) {
     Channel.fromPath(params.dbsnp)
            .ifEmpty { exit 1, "dbsnp annotation file not found: ${params.dbsnp}" }
-           .into { dbsnp }
+           .set { dbsnp }
 }
-params.dbsnp_idx = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.dbsnp_idx = params.genome ? params.genomes[ params.genome ].dbsnp_idx ?: false : false
 if (params.dbsnp_idx) {
     Channel.fromPath(params.dbsnp_idx)
            .ifEmpty { exit 1, "dbsnp_idx annotation file not found: ${params.dbsnp_idx}" }
-           .into { dbsnp_idx }
+           .set { dbsnp_idx }
 }
-params.golden_indel = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.golden_indel = params.genome ? params.genomes[ params.genome ].golden_indel ?: false : false
 if (params.golden_indel) {
     Channel.fromPath(params.golden_indel)
            .ifEmpty { exit 1, "golden_indel annotation file not found: ${params.golden_indel}" }
-           .into { golden_indel }
+           .set { golden_indel }
 }
-params.golden_indel_idx = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.golden_indel_idx = params.genome ? params.genomes[ params.genome ].golden_indel_idx ?: false : false
 if (params.golden_indel_idx) {
     Channel.fromPath(params.golden_indel_idx)
            .ifEmpty { exit 1, "golden_indel_idx annotation file not found: ${params.golden_indel_idx}" }
-           .into { golden_indel_idx }
+           .set { golden_indel_idx }
 }
-params.hapmap_gz = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.hapmap_gz = params.genome ? params.genomes[ params.genome ].hapmap_gz ?: false : false
 if (params.hapmap_gz) {
     Channel.fromPath(params.hapmap_gz)
            .ifEmpty { exit 1, "hapmap_gz annotation file not found: ${params.hapmap_gz}" }
-           .into { hapmap_gz }
+           .set { hapmap_gz }
 }
-params.hapmap_idx_gz = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.hapmap_idx_gz = params.genome ? params.genomes[ params.genome ].hapmap_idx_gz ?: false : false
 if (params.hapmap_idx_gz) {
     Channel.fromPath(params.hapmap_idx_gz)
            .ifEmpty { exit 1, "hapmap_idx_gz annotation file not found: ${params.hapmap_idx_gz}" }
-           .into { hapmap_idx_gz }
+           .set { hapmap_idx_gz }
 }
-params.omni_gz = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.omni_gz = params.genome ? params.genomes[ params.genome ].omni_gz ?: false : false
 if (params.omni_gz) {
     Channel.fromPath(params.omni_gz)
            .ifEmpty { exit 1, "omni_gz annotation file not found: ${params.omni_gz}" }
-           .into { omni_gz }
+           .set { omni_gz }
 }
-params.omni_idx_gz = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.omni_idx_gz = params.genome ? params.genomes[ params.genome ].omni_idx_gz ?: false : false
 if (params.omni_idx_gz) {
     Channel.fromPath(params.omni_idx_gz)
            .ifEmpty { exit 1, "omni_idx_gz annotation file not found: ${params.omni_idx_gz}" }
-           .into { omni_idx_gz }
+           .set { omni_idx_gz }
 }
-params.phase1_snps = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.phase1_snps = params.genome ? params.genomes[ params.genome ].phase1_snps ?: false : false
 if (params.phase1_snps) {
     Channel.fromPath(params.phase1_snps)
            .ifEmpty { exit 1, "phase1_snps annotation file not found: ${params.phase1_snps}" }
-           .into { phase1_snps }
+           .set { phase1_snps }
 }
-params.phase1_snps_idx = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.phase1_snps_idx = params.genome ? params.genomes[ params.genome ].phase1_snps_idx ?: false : false
 if (params.phase1_snps_idx) {
     Channel.fromPath(params.phase1_snps_idx)
            .ifEmpty { exit 1, "phase1_snps_idx annotation file not found: ${params.phase1_snps_idx}" }
-           .into { phase1_snps_idx }
+           .set { phase1_snps_idx }
 }
-params.bwa_index_amb = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.bwa_index_amb = params.genome ? params.genomes[ params.genome ].bwa_index_amb ?: false : false
 if (params.bwa_index_amb) {
     Channel.fromPath(params.bwa_index_amb)
            .ifEmpty { exit 1, "bwa_index_amb annotation file not found: ${params.bwa_index_amb}" }
-           .into { bwa_index_amb }
+           .set { bwa_index_amb }
 }
-params.bwa_index_ann = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.bwa_index_ann = params.genome ? params.genomes[ params.genome ].bwa_index_ann ?: false : false
 if (params.bwa_index_ann) {
     Channel.fromPath(params.bwa_index_ann)
            .ifEmpty { exit 1, "bwa_index_ann annotation file not found: ${params.bwa_index_ann}" }
-           .into { bwa_index_ann }
+           .set { bwa_index_ann }
 }
-params.bwa_index_bwt = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.bwa_index_bwt = params.genome ? params.genomes[ params.genome ].bwa_index_bwt ?: false : false
 if (params.bwa_index_bwt) {
     Channel.fromPath(params.bwa_index_bwt)
            .ifEmpty { exit 1, "bwa_index_bwt annotation file not found: ${params.bwa_index_bwt}" }
-           .into { bwa_index_bwt }
+           .set { bwa_index_bwt }
 }
-params.bwa_index_pac = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.bwa_index_pac = params.genome ? params.genomes[ params.genome ].bwa_index_pac ?: false : false
 if (params.bwa_index_pac) {
     Channel.fromPath(params.bwa_index_pac)
            .ifEmpty { exit 1, "bwa_index_pac annotation file not found: ${params.bwa_index_pac}" }
-           .into { bwa_index_pac }
+           .set { bwa_index_pac }
 }
-params.bwa_index_sa = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
+params.bwa_index_sa = params.genome ? params.genomes[ params.genome ].bwa_index_sa ?: false : false
 if (params.bwa_index_sa) {
     Channel.fromPath(params.bwa_index_sa)
            .ifEmpty { exit 1, "bwa_index_sa annotation file not found: ${params.bwa_index_sa}" }
-           .into { bwa_index_sa }
+           .set { bwa_index_sa }
 }
 
-bwa_index  = Channel.from(bwa_index_amb, bwa_index_ann, bwa_index_bwt, bwa_index_pac, bwa_index_sa)
-//bwa_index = Channel.from(bwa_index_amb).merge(bwa_index_ann, bwa_index_bwt, bwa_index_pac, bwa_index_sa).collect()
+
+bwa_index = Channel.from(bwa_index_amb).merge(bwa_index_ann, bwa_index_bwt, bwa_index_pac, bwa_index_sa).collect()
 
 
 /*
@@ -169,6 +169,7 @@ reads_samplename.first().subscribe { println it }
 
 
 process gunzip_hapmap {
+  tag "$hapmap_gz"
 	publishDir "${params.outdir}/reference"
 
   input:
@@ -180,12 +181,13 @@ process gunzip_hapmap {
 	file "*.vcf.idx" into hapmap_idx
 
 	"""
-	gunzip -d $hapmap_gz
-	gunzip -d $hapmap_idx_gz
+	gunzip -d --force $hapmap_gz
+	gunzip -d --force $hapmap_idx_gz
 	"""
 }
 
 process gunzip_omni {
+  tag "$omni_gz"
 	publishDir "${params.outdir}/reference"
 
   input:
@@ -197,12 +199,13 @@ process gunzip_omni {
 	file "*.vcf.idx" into omni_idx
 
 	"""
-	gunzip -d $omni_gz
-	gunzip -d $omni_idx_gz
+	gunzip -d --force $omni_gz
+	gunzip -d --force $omni_idx_gz
 	"""
 }
 
 process BWA {
+  tag "$reads"
 	publishDir "${params.outdir}/MappedRead"
 	container 'kathrinklee/bwa:latest'
 
@@ -215,11 +218,11 @@ process BWA {
 	file 'aln-pe.sam' into samfile
 
 	"""
-	bwa mem -M -R '@RG\\tID:${reads_prefix}\\tSM:${reads_prefix}\\tPL:Illumina' $fasta *.${params.reads_extension} > aln-pe.sam
+	bwa mem -M -R '@RG\\tID:${params.reads_prefix}\\tSM:${params.reads_prefix}\\tPL:Illumina' $fasta *.${params.reads_extension} > aln-pe.sam
 	"""
 
 }
-//
+
 // process BWA_sort {
 // 	publishDir "${params.outdir}/MappedRead"
 // 	container 'comics/samtools:latest'
