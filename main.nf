@@ -314,14 +314,14 @@ process HaplotypeCaller {
   set val(name), file(bam_bqsr), file(fasta), file(fai), file(dict) from haplotypecaller
 
 	output:
-	set val(name), file("${name}_haplotypecaller.g.vcf") into haplotypecaller_gvcf
+	file("${name}.g.vcf") into haplotypecaller_gvcf
 
 	script:
 	"""
   gatk HaplotypeCaller  \
   -R $fasta \
   -I $bam_bqsr \
-  -O ${name}_haplotypecaller.g.vcf \
+  -O ${name}.g.vcf \
   -ERC GVCF
 	"""
 }
@@ -332,7 +332,7 @@ process GenomicsDBImport {
 	container 'broadinstitute/gatk:latest'
 
 	input:
-	set val(name), file(haplotypecaller_gvcf) from haplotypecaller_gvcf.collect()
+	file haplotypecaller_gvcf from haplotypecaller_gvcf.collect()
 
 	output:
 	file("*.vcf") into genomicsdbimport_gvcf
@@ -340,18 +340,12 @@ process GenomicsDBImport {
 	script:
 	"""
   ## make sample map
-  echo $name > name.txt
-  echo $haplotypecaller_gvcf > haplotypecaller_gvcf.txt
-  paste name.txt haplotypecaller_gvcf.txt > cohort.sample_map
-  cat cohort.sample_map
+  for gvcf in ${haplotypecaller_gvcf}; do
+      echo \$gvcf >> gvcf.txt
+      basename \$gvcf .g.vcf | cat >> name.txt
+  done
+  paste name.txt gvcf.txt > cohort.sample_map
 
-  #for gvcf in ${haplotypecaller_gvcf}; do
-    #echo \$gvcf >> cohort.sample_map
-    #cat cohort.sample_map
-  #done
-
-  #echo "While loop:"
-  #paste <($name) <($haplotypecaller_gvcf) | while read e u; do echo \$e \$u; done
   gatk GenomicsDBImport \
      --genomicsdb-workspace-path my_database \
      -L 20 \
