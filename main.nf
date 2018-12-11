@@ -374,12 +374,11 @@ process GenotypeGVCFs {
 
 	script:
 	"""
-	gatk GenotypeGVCFs --variant haplotypecaller.g.vcf -R $reference -O haplotypecaller.vcf
-  gatk-launch GenotypeGVCFs \
-    -R data/ref/ref.fasta \
-    -V gendb://my_database \
+	gatk GenotypeGVCFs \
+    -V $haplotypecaller_gvcf \
+    -R $reference \
     -G StandardAnnotation -newQual \
-    -O test_output.vcf
+    -O haplotypecaller.vcf
 	"""
 }
 
