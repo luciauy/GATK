@@ -302,8 +302,24 @@ process ApplyBQSR {
 	"""
 }
 
+process indexBam {
+  tag "$bam"
+  container 'lifebitai/samtools:latest'
+
+  input:
+  set val(name), file(bam) from bam_bqsr
+
+  output:
+  set val(name), file("${name}_bqsr.bam"), file("${name}_bqsr.bam.bai") into indexed_bam_bqsr
+
+  script:
+  """
+  samtools index $bam
+  """
+}
+
 haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller)
-haplotypecaller = bam_bqsr.combine(haplotypecaller_index)
+haplotypecaller = indexed_bam_bqsr.combine(haplotypecaller_index)
 
 process HaplotypeCaller {
   tag "$bam_bqsr"
@@ -311,14 +327,14 @@ process HaplotypeCaller {
 	container 'broadinstitute/gatk:latest'
 
 	input:
-  set val(name), file(bam_bqsr), file(fasta), file(fai), file(dict) from haplotypecaller
+  set val(name), file(bam_bqsr), file(bai), file(fasta), file(fai), file(dict) from haplotypecaller
 
 	output:
 	file("${name}.g.vcf") into haplotypecaller_gvcf
 
 	script:
 	"""
-  gatk HaplotypeCaller  \
+  gatk HaplotypeCaller \
   -R $fasta \
   -I $bam_bqsr \
   -O ${name}.g.vcf \
@@ -341,7 +357,7 @@ process GenomicsDBImport {
 	"""
   ## make sample map
   for gvcf in ${haplotypecaller_gvcf}; do
-      echo \$gvcf >> gvcf.txt
+      readlink -f \$gvcf | cat >> gvcf.txt
       basename \$gvcf .g.vcf | cat >> name.txt
   done
   paste name.txt gvcf.txt > cohort.sample_map
@@ -368,7 +384,7 @@ process GenotypeGVCFs {
 
 	script:
 	"""
-	gatk GenotypeGVCFs \
+  gatk GenotypeGVCFs \
     -V $haplotypecaller_gvcf \
     -R $reference \
     -G StandardAnnotation -newQual \
