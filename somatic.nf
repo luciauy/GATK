@@ -547,46 +547,67 @@ process SplitIntervals {
   """
 }
 
-// process Mutect2 {
-//
-//   container 'vladsaveliev/gatk_docker:latest'
-//
-//   input:
-//
-//   output:
-//
-//   script:
-//   """
-//   set -e
-//
-//   export GATK_LOCAL_JAR=${default="/root/gatk.jar" gatk_override}
-//
-//   # We need to create these files regardless, even if they stay empty
-//   touch bamout.bam
-//   echo "" > normal_name.txt
-//
-//   gatk --java-options "-Xmx${command_mem}m" GetSampleName -R ${ref_fasta} -I ${tumor_bam} -O tumor_name.txt -encode
-//   tumor_command_line="-I ${tumor_bam} -tumor `cat tumor_name.txt`"
-//
-//   if [[ -f "${normal_bam}" ]]; then
-//       gatk --java-options "-Xmx${command_mem}m" GetSampleName -R ${ref_fasta} -I ${normal_bam} -O normal_name.txt -encode
-//       normal_command_line="-I ${normal_bam} -normal `cat normal_name.txt`"
-//   fi
-//
-//   gatk --java-options "-Xmx${command_mem}m" Mutect2 \
-//       -R ${ref_fasta} \
-//       $tumor_command_line \
-//       $normal_command_line \
-//       ${"--germline-resource " + gnomad} \
-//       ${"-pon " + pon} \
-//       ${"-L " + intervals} \
-//       ${"--genotyping-mode GENOTYPE_GIVEN_ALLELES --alleles " + gga_vcf} \
-//       -O "${output_vcf}" \
-//       ${true='--bam-output bamout.bam' false='' make_bamout} \
-//       ${"--orientation-bias-artifact-priors " + artifact_prior_table} \
-//       ${m2_extra_args}
-//   """
-// }
+process Mutect2 {
+
+  container 'vladsaveliev/gatk_docker:latest'
+
+  input:
+  File? intervals
+  File ref_fasta
+  File ref_fai
+  File ref_dict
+  File tumor_bam
+  File tumor_bai
+  File? normal_bam
+  File? normal_bai
+  File? pon
+  File? pon_index
+  File? gnomad
+  File? gnomad_index
+  String? m2_extra_args
+  Boolean? make_bamout
+  Boolean compress
+  File? gga_vcf
+  File? gga_vcf_idx
+  File? artifact_prior_table
+
+  output:
+  File unfiltered_vcf = "${output_vcf}"
+  File unfiltered_vcf_index = "${output_vcf_index}"
+  File output_bamOut = "bamout.bam"
+  String tumor_sample = read_string("tumor_name.txt")
+  String normal_sample = read_string("normal_name.txt")
+
+  script:
+  """
+  export GATK_LOCAL_JAR=${default="/root/gatk.jar" gatk_override}
+
+  # We need to create these files regardless, even if they stay empty
+  touch bamout.bam
+  echo "" > normal_name.txt
+
+  gatk --java-options "-Xmx${command_mem}m" GetSampleName -R ${ref_fasta} -I ${tumor_bam} -O tumor_name.txt -encode
+  tumor_command_line="-I ${tumor_bam} -tumor `cat tumor_name.txt`"
+
+  if [[ -f "${normal_bam}" ]]; then
+      gatk --java-options "-Xmx${command_mem}m" GetSampleName -R ${ref_fasta} -I ${normal_bam} -O normal_name.txt -encode
+      normal_command_line="-I ${normal_bam} -normal `cat normal_name.txt`"
+  fi
+
+  gatk --java-options "-Xmx${command_mem}m" Mutect2 \
+      -R ${ref_fasta} \
+      $tumor_command_line \
+      $normal_command_line \
+      ${"--germline-resource " + gnomad} \
+      ${"-pon " + pon} \
+      ${"-L " + intervals} \
+      ${"--genotyping-mode GENOTYPE_GIVEN_ALLELES --alleles " + gga_vcf} \
+      -O "${output_vcf}" \
+      ${true='--bam-output bamout.bam' false='' make_bamout} \
+      ${"--orientation-bias-artifact-priors " + artifact_prior_table} \
+      ${m2_extra_args}
+  """
+}
 //
 // process MergeVCFs {
 //
