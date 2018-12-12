@@ -302,7 +302,7 @@ process ApplyBQSR {
 	"""
 }
 
-process indexBam {
+process IndexBam {
   tag "$bam"
   container 'lifebitai/samtools:latest'
 
@@ -343,7 +343,7 @@ process HaplotypeCaller {
 }
 
 process GenomicsDBImport {
-  tag "haplotypecaller_gvcf.txt"
+  tag "my_database"
 	publishDir "${params.outdir}/HaplotypeCaller"
 	container 'broadinstitute/gatk:latest'
 
@@ -351,7 +351,7 @@ process GenomicsDBImport {
 	file haplotypecaller_gvcf from haplotypecaller_gvcf.collect()
 
 	output:
-	file("*.vcf") into genomicsdbimport_gvcf
+	file("my_database") into genomicsdbimport
 
 	script:
 	"""
@@ -365,11 +365,12 @@ process GenomicsDBImport {
   gatk GenomicsDBImport \
      --genomicsdb-workspace-path my_database \
      -L 20 \
-     --sample-name-map cohort.sample_map \
+     --sample-name-map cohort.sample_map
 	"""
 }
 
 process GenotypeGVCFs {
+  tag "haplotypecaller.vcf"
 	publishDir "${params.outdir}/HaplotypeCaller"
 	container 'broadinstitute/gatk:latest'
 
@@ -377,7 +378,7 @@ process GenotypeGVCFs {
 	file fasta from fasta_genotypegvcfs
 	file fai from fai_genotypegvcfs
 	file dict from dict_genotypegvcfs
-	file haplotypecaller_gvcf from genomicsdbimport_gvcf
+	file db from genomicsdbimport
 
 	output:
 	file 'haplotypecaller.vcf' into haplotypecaller_vcf, haplotypecaller_vcf_applyvqsr_snps
@@ -385,9 +386,9 @@ process GenotypeGVCFs {
 	script:
 	"""
   gatk GenotypeGVCFs \
-    -V $haplotypecaller_gvcf \
-    -R $reference \
-    -G StandardAnnotation -newQual \
+    -V gendb://$db \
+    -R $fasta \
+    -G StandardAnnotation \
     -O haplotypecaller.vcf
 	"""
 }
