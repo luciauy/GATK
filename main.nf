@@ -343,7 +343,7 @@ process HaplotypeCaller {
 }
 
 process GenomicsDBImport {
-  tag "my_database"
+  tag "$haplotypecaller_gvcf"
 	publishDir "${params.outdir}/HaplotypeCaller"
 	container 'broadinstitute/gatk:latest'
 
@@ -370,7 +370,7 @@ process GenomicsDBImport {
 }
 
 process GenotypeGVCFs {
-  tag "haplotypecaller.vcf"
+  tag "$db"
 	publishDir "${params.outdir}/HaplotypeCaller"
 	container 'broadinstitute/gatk:latest'
 
@@ -396,6 +396,7 @@ process GenotypeGVCFs {
 
 
 process VariantRecalibrator_SNPs {
+  tag "$haplotypecaller_vcf"
 	publishDir "${params.outdir}/VariantRecalibrator"
 	container 'broadinstitute/gatk:latest'
 
@@ -438,13 +439,14 @@ process VariantRecalibrator_SNPs {
     	-tranche 100.0 -tranche 99.9 -tranche 99.0 -tranche 90.0 \
 	--max-gaussians 8 \
     	-O recalibrate_SNP.recal \
-    	--tranches-file recalibrate_SNP.tranches \
+    	--tranches-file recalibrate_SNP.tranches
 	"""
 }
 
 
 
 process ApplyVQSR_SNPs {
+  tag "$variantrecalibrator_recal"
 	publishDir "${params.outdir}/VariantRecalibrator"
 	container 'broadinstitute/gatk:latest'
 
@@ -472,6 +474,7 @@ process ApplyVQSR_SNPs {
 
 
 process VariantRecalibrator_INDELs {
+  tag "$recalibrated_snps_raw_indels"
 	publishDir "${params.outdir}/VariantRecalibrator"
 	container 'broadinstitute/gatk:latest'
 
@@ -507,11 +510,12 @@ process VariantRecalibrator_INDELs {
     	-tranche 100.0 -tranche 99.9 -tranche 99.0 -tranche 90.0 \
 	--max-gaussians 4 \
     	-O recalibrate_INDEL.recal \
-    	--tranches-file recalibrate_INDEL.tranches \
+    	--tranches-file recalibrate_INDEL.tranches
 	"""
 }
 
 process ApplyVQSR_INDELs {
+  tag "$recalibrated_snps_raw_indels"
 	publishDir "${params.outdir}/VariantRecalibrator"
 	container 'broadinstitute/gatk:latest'
 
