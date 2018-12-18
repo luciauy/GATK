@@ -330,7 +330,7 @@ process HaplotypeCaller {
   set val(name), file(bam_bqsr), file(bai), file(fasta), file(fai), file(dict) from haplotypecaller
 
 	output:
-	file("${name}.g.vcf") into haplotypecaller_gvcf
+	set file("${name}.g.vcf"), file("${name}.g.vcf.tbi") into haplotypecaller_gvcf
 
 	script:
 	"""
@@ -342,200 +342,43 @@ process HaplotypeCaller {
 	"""
 }
 
-process GenomicsDBImport {
+process MergeVCFs {
   tag "$haplotypecaller_gvcf"
-	publishDir "${params.outdir}/HaplotypeCaller"
+	publishDir "${params.outdir}/MergeVCFs"
 	container 'broadinstitute/gatk:latest'
 
 	input:
-	file haplotypecaller_gvcf from haplotypecaller_gvcf.collect()
+  set file(haplotypecaller_gvcf), file(index) from haplotypecaller_gvcf.collect()
 
 	output:
-	file("my_database") into genomicsdbimport
+	set file("merged.g.vcf"), file("merged.g.vcf.tbi") into mergevcfs
 
 	script:
 	"""
-  ## make sample map
-  for gvcf in ${haplotypecaller_gvcf}; do
-      readlink -f \$gvcf | cat >> gvcf.txt
-      basename \$gvcf .g.vcf | cat >> name.txt
-  done
-  paste name.txt gvcf.txt > cohort.sample_map
-
-  gatk GenomicsDBImport \
-     --genomicsdb-workspace-path my_database \
-     -L 20 \
-     --sample-name-map cohort.sample_map
-	"""
-}
-
-process GenotypeGVCFs {
-  tag "$db"
-	publishDir "${params.outdir}/HaplotypeCaller"
-	container 'broadinstitute/gatk:latest'
-
-	input:
-	file fasta from fasta_genotypegvcfs
-	file fai from fai_genotypegvcfs
-	file dict from dict_genotypegvcfs
-	file db from genomicsdbimport
-
-	output:
-	file 'haplotypecaller.vcf' into haplotypecaller_vcf, haplotypecaller_vcf_applyvqsr_snps
-
-	script:
-	"""
-  gatk GenotypeGVCFs \
-    -V gendb://$db \
-    -R $fasta \
-    -G StandardAnnotation \
-    -O haplotypecaller.vcf
+  gatk MergeVcfs \
+  --INPUT= $haplotypecaller_gvcf
+  --OUTPUT= merged.g.vcf
 	"""
 }
 
 
-
-process VariantRecalibrator_SNPs {
-  tag "$haplotypecaller_vcf"
-	publishDir "${params.outdir}/VariantRecalibrator"
+process HardFilterVcf {
+  tag "$merged_vcf"
+	publishDir "${params.outdir}"
 	container 'broadinstitute/gatk:latest'
 
 	input:
-	file fasta from fasta_variantrecalibrator_snps
-	file fai from fai_variantrecalibrator_snps
-	file dict from dict_variantrecalibrator_snps
-	file haplotypecaller_vcf from haplotypecaller_vcf
-	file hapmap from hapmap
-	file hapmap_idx from hapmap_idx
-	file omni from omni
-	file omni_idx from omni_idx
-	file phase1_snps from phase1_snps
-	file phase1_snps_idx from phase1_snps_idx
-	file dbsnp from dbsnp_variantrecalibrator_snps
-	file dbsnp_idx from dbsnp_idx_variantrecalibrator_snps
+  set file(merged_vcf), file(index) from mergevcfs
 
 	output:
-	file 'recalibrate_SNP.recal' into variantrecalibrator_recal
-	file 'recalibrate_SNP.recal.idx' into variantrecalibrator_recal_idx
-	file 'recalibrate_SNP.tranches' into variantrecalibrator_tranches
+  set file("output.vcf"), file("output.vcf.tbi") into results
 
 	script:
 	"""
-	gatk VariantRecalibrator \
-	-V $haplotypecaller_vcf \
- 	-R $fasta \
-	-resource hapmap,known=false,training=true,truth=true,prior=15.0:./$hapmap \
-	-resource omni,known=false,training=true,truth=true,prior=12.0:./$omni \
-    	-resource 1000G,known=false,training=true,truth=false,prior=10.0:./$phase1_snps \
-    	-resource dbsnp,known=true,training=false,truth=false,prior=2.0:./$dbsnp \
-	-an DP \
-    	-an QD \
-	-an FS \
-    	-an SOR \
-    	-an MQ \
-    	-an MQRankSum \
-    	-an ReadPosRankSum \
-    	-mode SNP \
-    	-tranche 100.0 -tranche 99.9 -tranche 99.0 -tranche 90.0 \
-	--max-gaussians 8 \
-    	-O recalibrate_SNP.recal \
-    	--tranches-file recalibrate_SNP.tranches
-	"""
-}
-
-
-
-process ApplyVQSR_SNPs {
-  tag "$variantrecalibrator_recal"
-	publishDir "${params.outdir}/VariantRecalibrator"
-	container 'broadinstitute/gatk:latest'
-
-	input:
-	file haplotypecaller_vcf from haplotypecaller_vcf_applyvqsr_snps
-	file variantrecalibrator_recal from variantrecalibrator_recal
-	file variantrecalibrator_recal_idx from variantrecalibrator_recal_idx
-	file variantrecalibrator_tranches from variantrecalibrator_tranches
-
-	output:
-	file 'recalibrated_snps_raw_indels.vcf' into recalibrated_snps_raw_indels, recalibrated_snps_raw_indels_applyvqsr_indels
-
-	script:
-	"""
-	gatk ApplyVQSR \
-	-V $haplotypecaller_vcf \
-	--recal-file $variantrecalibrator_recal \
-	--tranches-file $variantrecalibrator_tranches \
-	-mode SNP \
-	-ts-filter-level 99.0 \
-	-O recalibrated_snps_raw_indels.vcf
-	"""
-}
-
-
-
-process VariantRecalibrator_INDELs {
-  tag "$recalibrated_snps_raw_indels"
-	publishDir "${params.outdir}/VariantRecalibrator"
-	container 'broadinstitute/gatk:latest'
-
-	input:
-	file fasta from fasta_variantrecalibrator_tranches
-	file fai from fai_variantrecalibrator_tranches
-	file dict from dict_variantrecalibrator_tranches
-	file recalibrated_snps_raw_indels from recalibrated_snps_raw_indels
-	file dbsnp from dbsnp_variantrecalibrator_indels
-	file dbsnp_idx from dbsnp_idx_variantrecalibrator_indels
-	file golden_indel from golden_indel_variantrecalibrator_indels
-	file golden_indel_idx from golden_indel_idx_variantrecalibrator_indels
-
-	output:
-	file 'recalibrate_INDEL.recal' into variantrecalibrator_indel_recal
-	file 'recalibrate_INDEL.recal.idx' into variantrecalibrator_indel_recal_idx
-	file 'recalibrate_INDEL.tranches' into variantrecalibrator_indel_tranches
-
-	script:
-	"""
-	gatk VariantRecalibrator \
-	-V $recalibrated_snps_raw_indels \
- 	-R $fasta \
-	--resource mills,known=false,training=true,truth=true,prior=12.0:./$golden_indel \
-    	--resource dbsnp,known=true,training=false,truth=false,prior=2.0:./$dbsnp \
-	-an QD \
-    	-an DP \
-    	-an FS \
-	-an SOR \
-    	-an MQRankSum \
-    	-an ReadPosRankSum \
-    	-mode INDEL \
-    	-tranche 100.0 -tranche 99.9 -tranche 99.0 -tranche 90.0 \
-	--max-gaussians 4 \
-    	-O recalibrate_INDEL.recal \
-    	--tranches-file recalibrate_INDEL.tranches
-	"""
-}
-
-process ApplyVQSR_INDELs {
-  tag "$recalibrated_snps_raw_indels"
-	publishDir "${params.outdir}/VariantRecalibrator"
-	container 'broadinstitute/gatk:latest'
-
-	input:
-	file recalibrated_snps_raw_indels from recalibrated_snps_raw_indels_applyvqsr_indels
-	file variantrecalibrator_indel_recal from variantrecalibrator_indel_recal
-	file variantrecalibrator_indel_recal_idx from variantrecalibrator_indel_recal_idx
-	file variantrecalibrator_indel_tranches from variantrecalibrator_indel_tranches
-
-	output:
-	file 'recalibrated_variants.vcf' into recalibrated_variants_vcf
-
-	script:
-	"""
-	gatk ApplyVQSR \
-	-V $recalibrated_snps_raw_indels \
-	--recal-file $variantrecalibrator_indel_recal \
-	--tranches-file $variantrecalibrator_indel_tranches \
-	-mode INDEL \
-	-ts-filter-level 99.0 \
-	-O recalibrated_variants.vcf
+  gatk VariantFiltration \
+  -V $merged_vcf \
+  --filterExpression "QD < 2.0 || FS > 30.0 || SOR > 3.0 || MQ < 40.0 || MQRankSum < -3.0 || ReadPosRankSum < -3.0" \
+  --filterName "HardFiltered" \
+  -O output.vcf
 	"""
 }
