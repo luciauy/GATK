@@ -330,15 +330,20 @@ process HaplotypeCaller {
   set val(name), file(bam_bqsr), file(bai), file(fasta), file(fai), file(dict) from haplotypecaller
 
 	output:
-	set file("${name}.g.vcf"), file("${name}.g.vcf.tbi") into haplotypecaller_gvcf
+	file("${name}.g.vcf") into haplotypecaller_gvcf
+  file("${name}.g.vcf.idx") into index
 
 	script:
 	"""
+  gatk PrintReads \
+      -I $bam_bqsr \
+      -O local.sharded.bam \
+
   gatk HaplotypeCaller \
-  -R $fasta \
-  -I $bam_bqsr \
-  -O ${name}.g.vcf \
-  -ERC GVCF
+    -R $fasta \
+    -O ${name}.g.vcf \
+    -I local.sharded.bam \
+    -ERC GVCF \
 	"""
 }
 
@@ -348,15 +353,22 @@ process MergeVCFs {
 	container 'broadinstitute/gatk:latest'
 
 	input:
-  set file(haplotypecaller_gvcf), file(index) from haplotypecaller_gvcf.collect()
+  file haplotypecaller_gvcf from haplotypecaller_gvcf.collect()
+  file index from index.collect()
 
 	output:
-	set file("merged.g.vcf"), file("merged.g.vcf.tbi") into mergevcfs
+	set file("merged.g.vcf"), file("merged.g.vcf.idx") into mergevcfs
 
 	script:
 	"""
+  ## make list of input variant files
+  for vcf in ${haplotypecaller_gvcf}; do
+    #readlink -f \$vcf | cat >> input_variant_files.list
+    echo \$vcf >> input_variant_files.list
+  done
+
   gatk MergeVcfs \
-  --INPUT= $haplotypecaller_gvcf
+  --INPUT= input_variant_files.list \
   --OUTPUT= merged.g.vcf
 	"""
 }
@@ -371,7 +383,7 @@ process HardFilterVcf {
   set file(merged_vcf), file(index) from mergevcfs
 
 	output:
-  set file("output.vcf"), file("output.vcf.tbi") into results
+  set file("output.vcf"), file("output.vcf.idx") into results
 
 	script:
 	"""
