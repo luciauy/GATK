@@ -304,18 +304,18 @@ process HaplotypeCaller {
 	container 'broadinstitute/gatk:latest'
 
 	input:
-  set val(interval_list), file(fasta), file(fai), file(dict), val(name), file(bam_bqsr), file(bai) from haplotypecaller
+  set val(interval_list), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai) from haplotypecaller
 
 	output:
-	file("${interval_list}.g.vcf") into haplotypecaller_gvcf
-  file("${interval_list}.g.vcf.idx") into index
-  val(name) into sample
+	file("${sample}.g.vcf") into haplotypecaller_gvcf
+  file("${sample}.g.vcf.idx") into index
+  val(sample) into sample
 
 	script:
 	"""
   gatk HaplotypeCaller \
     -R $fasta \
-    -O ${interval_list}.g.vcf \
+    -O ${sample}.g.vcf \
     -I $bam_bqsr \
     -ERC GVCF \
     -L $interval_list
@@ -323,27 +323,27 @@ process HaplotypeCaller {
 }
 
 process MergeVCFs {
-  tag "${name}.g.vcf"
-	publishDir "${params.outdir}/MergeVCFs"
+  tag "${name[0]}.g.vcf"
+	publishDir "${params.outdir}"
 	container 'broadinstitute/gatk:latest'
 
 	input:
-  file haplotypecaller_gvcf from haplotypecaller_gvcf.collect()
-  file index from index.collect()
-  val name from sample
+  file ('*.g.vcf') from haplotypecaller_gvcf.collect()
+  file ('*.g.vcf.idx') from index.collect()
+  val name from sample.collect()
 
 	output:
-	set file("${name}.g.vcf"), file("${name}.g.vcf.idx") into mergevcfs
+	set file("${name[0]}.g.vcf"), file("${name[0]}.g.vcf.idx") into mergevcfs
 
 	script:
 	"""
   ## make list of input variant files
-  for vcf in ${haplotypecaller_gvcf}; do
+  for vcf in \$(ls *vcf); do
     echo \$vcf >> input_variant_files.list
   done
 
   gatk MergeVcfs \
   --INPUT= input_variant_files.list \
-  --OUTPUT= ${name}.g.vcf
+  --OUTPUT= ${name[0]}.g.vcf
 	"""
 }
