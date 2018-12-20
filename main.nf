@@ -46,29 +46,29 @@ if (params.dict) {
            .ifEmpty { exit 1, "dict annotation file not found: ${params.dict}" }
            .into { dict_bwa; dict_baserecalibrator; dict_haplotypecaller; dict_genotypegvcfs; dict_variantrecalibrator_snps; dict_variantrecalibrator_tranches }
 }
-params.dbsnp = params.genome ? params.genomes[ params.genome ].dbsnp ?: false : false
-if (params.dbsnp) {
-    Channel.fromPath(params.dbsnp)
-           .ifEmpty { exit 1, "dbsnp annotation file not found: ${params.dbsnp}" }
-           .into { dbsnp; dbsnp_variantrecalibrator_snps; dbsnp_variantrecalibrator_indels }
+params.dbsnp_gz = params.genome ? params.genomes[ params.genome ].dbsnp_gz ?: false : false
+if (params.dbsnp_gz) {
+    Channel.fromPath(params.dbsnp_gz)
+           .ifEmpty { exit 1, "dbsnp annotation file not found: ${params.dbsnp_gz}" }
+           .set { dbsnp_gz}
 }
-params.dbsnp_idx = params.genome ? params.genomes[ params.genome ].dbsnp_idx ?: false : false
-if (params.dbsnp_idx) {
-    Channel.fromPath(params.dbsnp_idx)
-           .ifEmpty { exit 1, "dbsnp_idx annotation file not found: ${params.dbsnp_idx}" }
-           .into { dbsnp_idx; dbsnp_idx_variantrecalibrator_snps; dbsnp_idx_variantrecalibrator_indels }
+params.dbsnp_idx_gz = params.genome ? params.genomes[ params.genome ].dbsnp_idx_gz ?: false : false
+if (params.dbsnp_idx_gz) {
+    Channel.fromPath(params.dbsnp_idx_gz)
+           .ifEmpty { exit 1, "dbsnp_idx_gz annotation file not found: ${params.dbsnp_idx_gz}" }
+           .set { dbsnp_idx_gz}
 }
-params.golden_indel = params.genome ? params.genomes[ params.genome ].golden_indel ?: false : false
-if (params.golden_indel) {
-    Channel.fromPath(params.golden_indel)
-           .ifEmpty { exit 1, "golden_indel annotation file not found: ${params.golden_indel}" }
-           .into { golden_indel; golden_indel_variantrecalibrator_indels }
+params.golden_indel_gz = params.genome ? params.genomes[ params.genome ].golden_indel_gz ?: false : false
+if (params.golden_indel_gz) {
+    Channel.fromPath(params.golden_indel_gz)
+           .ifEmpty { exit 1, "golden_indel_gz annotation file not found: ${params.golden_indel_gz}" }
+           .set { golden_indel_gz }
 }
-params.golden_indel_idx = params.genome ? params.genomes[ params.genome ].golden_indel_idx ?: false : false
-if (params.golden_indel_idx) {
-    Channel.fromPath(params.golden_indel_idx)
-           .ifEmpty { exit 1, "golden_indel_idx annotation file not found: ${params.golden_indel_idx}" }
-           .into { golden_indel_idx; golden_indel_idx_variantrecalibrator_indels}
+params.golden_indel_idx_gz = params.genome ? params.genomes[ params.genome ].golden_indel_idx_gz ?: false : false
+if (params.golden_indel_idx_gz) {
+    Channel.fromPath(params.golden_indel_idx_gz)
+           .ifEmpty { exit 1, "golden_indel_idx_gz annotation file not found: ${params.golden_indel_idx_gz}" }
+           .set { golden_indel_idx_gz }
 }
 params.hapmap_gz = params.genome ? params.genomes[ params.genome ].hapmap_gz ?: false : false
 if (params.hapmap_gz) {
@@ -94,17 +94,17 @@ if (params.omni_idx_gz) {
            .ifEmpty { exit 1, "omni_idx_gz annotation file not found: ${params.omni_idx_gz}" }
            .set { omni_idx_gz }
 }
-params.phase1_snps = params.genome ? params.genomes[ params.genome ].phase1_snps ?: false : false
-if (params.phase1_snps) {
-    Channel.fromPath(params.phase1_snps)
-           .ifEmpty { exit 1, "phase1_snps annotation file not found: ${params.phase1_snps}" }
-           .set { phase1_snps }
+params.phase1_snps_gz = params.genome ? params.genomes[ params.genome ].phase1_snps_gz ?: false : false
+if (params.phase1_snps_gz) {
+    Channel.fromPath(params.phase1_snps_gz)
+           .ifEmpty { exit 1, "phase1_snps_gz annotation file not found: ${params.phase1_snps_gz}" }
+           .set { phase1_snps_gz }
 }
-params.phase1_snps_idx = params.genome ? params.genomes[ params.genome ].phase1_snps_idx ?: false : false
-if (params.phase1_snps_idx) {
-    Channel.fromPath(params.phase1_snps_idx)
-           .ifEmpty { exit 1, "phase1_snps_idx annotation file not found: ${params.phase1_snps_idx}" }
-           .set { phase1_snps_idx }
+params.phase1_snps_idx_gz = params.genome ? params.genomes[ params.genome ].phase1_snps_idx_gz ?: false : false
+if (params.phase1_snps_idx_gz) {
+    Channel.fromPath(params.phase1_snps_idx_gz)
+           .ifEmpty { exit 1, "phase1_snps_idx_gz annotation file not found: ${params.phase1_snps_idx_gz}" }
+           .set { phase1_snps_idx_gz }
 }
 params.bwa_index_amb = params.genome ? params.genomes[ params.genome ].bwa_index_amb ?: false : false
 if (params.bwa_index_amb) {
@@ -135,6 +135,11 @@ if (params.bwa_index_sa) {
     Channel.fromPath(params.bwa_index_sa)
            .ifEmpty { exit 1, "bwa_index_sa annotation file not found: ${params.bwa_index_sa}" }
            .set { bwa_index_sa }
+}
+if (params.interval_list) {
+    Channel.fromPath(params.interval_list)
+           .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.interval_list}" }
+           .set { interval_list }
 }
 
 
@@ -168,6 +173,41 @@ if(params.singleEnd){
 reads_samplename.subscribe { println it }
 
 
+process gunzip_dbsnp {
+  tag "$dbsnp_gz"
+	publishDir "${params.outdir}/reference"
+
+  input:
+  file dbsnp_gz from dbsnp_gz
+  file dbsnp_idx_gz from dbsnp_idx_gz
+
+	output:
+	file "*.vcf" into dbsnp, dbsnp_variantrecalibrator_snps, dbsnp_variantrecalibrator_indels
+	file "*.vcf.idx" into dbsnp_idx, dbsnp_idx_variantrecalibrator_snps, dbsnp_idx_variantrecalibrator_indels
+
+	"""
+	gunzip -d --force $dbsnp_gz
+	gunzip -d --force $dbsnp_idx_gz
+	"""
+}
+
+process gunzip_golden_indel {
+  tag "$golden_indel_gz"
+  publishDir "${params.outdir}/reference"
+
+  input:
+  file golden_indel_gz from golden_indel_gz
+  file golden_indel_idx_gz from golden_indel_idx_gz
+
+  output:
+  file "*.vcf" into golden_indel, golden_indel_variantrecalibrator_indels
+  file "*.vcf.idx" into golden_indel_idx, golden_indel_idx_variantrecalibrator_indels
+
+  """
+  gunzip -d --force $golden_indel_gz
+  gunzip -d --force $golden_indel_idx_gz
+  """
+}
 
 process gunzip_hapmap {
   tag "$hapmap_gz"
@@ -203,6 +243,24 @@ process gunzip_omni {
 	gunzip -d --force $omni_gz
 	gunzip -d --force $omni_idx_gz
 	"""
+}
+
+process gunzip_phase1_snps {
+  tag "phase1_snps_gz"
+  publishDir "${params.outdir}/reference"
+
+  input:
+  file phase1_snps_gz from phase1_snps_gz
+  file phase1_snps_idx_gz from phase1_snps_idx_gz
+
+  output:
+  file "*.vcf" into phase1_snps
+  file "*.vcf.idx" into phase1_snps_idx
+
+  """
+  gunzip -d --force $phase1_snps_gz
+  gunzip -d --force $phase1_snps_idx_gz
+  """
 }
 
 bwa_index = bwa_index_amb.merge(bwa_index_ann, bwa_index_bwt, bwa_index_pac, bwa_index_sa)
@@ -328,6 +386,7 @@ process HaplotypeCaller {
 
 	input:
   set val(name), file(bam_bqsr), file(bai), file(fasta), file(fai), file(dict) from haplotypecaller
+  file interval_list from interval_list
 
 	output:
 	file("${name}.g.vcf") into haplotypecaller_gvcf
@@ -335,15 +394,12 @@ process HaplotypeCaller {
 
 	script:
 	"""
-  gatk PrintReads \
-      -I $bam_bqsr \
-      -O local.sharded.bam \
-
   gatk HaplotypeCaller \
     -R $fasta \
     -O ${name}.g.vcf \
-    -I local.sharded.bam \
-    -ERC GVCF \
+    -I $bam_bqsr \
+    -L $interval_list \
+    -ERC GVCF
 	"""
 }
 
