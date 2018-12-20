@@ -139,8 +139,10 @@ if (params.bwa_index_sa) {
 if (params.interval_list) {
     Channel.fromPath(params.interval_list)
            .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.interval_list}" }
-           .set { interval_list }
+           .into { interval_list; interval_list_hardfiltervcf }
 }
+// set gvcf
+//gvcf = params.gvcf ? '-ERC GVCF' : ''
 
 
 
@@ -376,7 +378,7 @@ process IndexBam {
   """
 }
 
-haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller)
+haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, interval_list)
 haplotypecaller = indexed_bam_bqsr.combine(haplotypecaller_index)
 
 process HaplotypeCaller {
@@ -385,8 +387,7 @@ process HaplotypeCaller {
 	container 'broadinstitute/gatk:latest'
 
 	input:
-  set val(name), file(bam_bqsr), file(bai), file(fasta), file(fai), file(dict) from haplotypecaller
-  file interval_list from interval_list
+  set val(name), file(bam_bqsr), file(bai), file(fasta), file(fai), file(dict), file(interval_list) from haplotypecaller
 
 	output:
 	file("${name}.g.vcf") into haplotypecaller_gvcf
@@ -419,7 +420,6 @@ process MergeVCFs {
 	"""
   ## make list of input variant files
   for vcf in ${haplotypecaller_gvcf}; do
-    #readlink -f \$vcf | cat >> input_variant_files.list
     echo \$vcf >> input_variant_files.list
   done
 
@@ -437,6 +437,7 @@ process HardFilterVcf {
 
 	input:
   set file(merged_vcf), file(index) from mergevcfs
+  file interval_list from interval_list_hardfiltervcf
 
 	output:
   set file("output.vcf"), file("output.vcf.idx") into results
@@ -445,8 +446,9 @@ process HardFilterVcf {
 	"""
   gatk VariantFiltration \
   -V $merged_vcf \
-  --filterExpression "QD < 2.0 || FS > 30.0 || SOR > 3.0 || MQ < 40.0 || MQRankSum < -3.0 || ReadPosRankSum < -3.0" \
-  --filterName "HardFiltered" \
+  -L $interval_list \
+  --genotype-filter-expression "QD < 2.0 || FS > 30.0 || SOR > 3.0 || MQ < 40.0 || MQRankSum < -3.0 || ReadPosRankSum < -3.0" \
+  --genotype-filter-name "HardFiltered" \
   -O output.vcf
 	"""
 }
