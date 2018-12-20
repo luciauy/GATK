@@ -70,42 +70,7 @@ if (params.golden_indel_idx_gz) {
            .ifEmpty { exit 1, "golden_indel_idx_gz annotation file not found: ${params.golden_indel_idx_gz}" }
            .set { golden_indel_idx_gz }
 }
-params.hapmap_gz = params.genome ? params.genomes[ params.genome ].hapmap_gz ?: false : false
-if (params.hapmap_gz) {
-    Channel.fromPath(params.hapmap_gz)
-           .ifEmpty { exit 1, "hapmap_gz annotation file not found: ${params.hapmap_gz}" }
-           .set { hapmap_gz }
-}
-params.hapmap_idx_gz = params.genome ? params.genomes[ params.genome ].hapmap_idx_gz ?: false : false
-if (params.hapmap_idx_gz) {
-    Channel.fromPath(params.hapmap_idx_gz)
-           .ifEmpty { exit 1, "hapmap_idx_gz annotation file not found: ${params.hapmap_idx_gz}" }
-           .set { hapmap_idx_gz }
-}
-params.omni_gz = params.genome ? params.genomes[ params.genome ].omni_gz ?: false : false
-if (params.omni_gz) {
-    Channel.fromPath(params.omni_gz)
-           .ifEmpty { exit 1, "omni_gz annotation file not found: ${params.omni_gz}" }
-           .set { omni_gz }
-}
-params.omni_idx_gz = params.genome ? params.genomes[ params.genome ].omni_idx_gz ?: false : false
-if (params.omni_idx_gz) {
-    Channel.fromPath(params.omni_idx_gz)
-           .ifEmpty { exit 1, "omni_idx_gz annotation file not found: ${params.omni_idx_gz}" }
-           .set { omni_idx_gz }
-}
-params.phase1_snps_gz = params.genome ? params.genomes[ params.genome ].phase1_snps_gz ?: false : false
-if (params.phase1_snps_gz) {
-    Channel.fromPath(params.phase1_snps_gz)
-           .ifEmpty { exit 1, "phase1_snps_gz annotation file not found: ${params.phase1_snps_gz}" }
-           .set { phase1_snps_gz }
-}
-params.phase1_snps_idx_gz = params.genome ? params.genomes[ params.genome ].phase1_snps_idx_gz ?: false : false
-if (params.phase1_snps_idx_gz) {
-    Channel.fromPath(params.phase1_snps_idx_gz)
-           .ifEmpty { exit 1, "phase1_snps_idx_gz annotation file not found: ${params.phase1_snps_idx_gz}" }
-           .set { phase1_snps_idx_gz }
-}
+
 params.bwa_index_amb = params.genome ? params.genomes[ params.genome ].bwa_index_amb ?: false : false
 if (params.bwa_index_amb) {
     Channel.fromPath(params.bwa_index_amb)
@@ -140,12 +105,11 @@ if (params.interval_list) {
     Channel.fromPath(params.interval_list)
            .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.interval_list}" }
            .splitText()
-           .into { interval_list; interval_list_hardfiltervcf }
+           .map { it -> it.trim() as Path }
+           .into { interval_list; intervals }
 }
-// set gvcf
-//gvcf = params.gvcf ? '-ERC GVCF' : ''
 
-
+intervals.subscribe{println "Interval: $it"}
 
 /*
  * Create a channel for input read files
@@ -188,10 +152,13 @@ process gunzip_dbsnp {
 	file "*.vcf" into dbsnp, dbsnp_variantrecalibrator_snps, dbsnp_variantrecalibrator_indels
 	file "*.vcf.idx" into dbsnp_idx, dbsnp_idx_variantrecalibrator_snps, dbsnp_idx_variantrecalibrator_indels
 
-	"""
-	gunzip -d --force $dbsnp_gz
-	gunzip -d --force $dbsnp_idx_gz
-	"""
+  script:
+if ( "${dbsnp_gz}".endsWith(".gz") ) {
+   """
+   gunzip -d --force $dbsnp_gz
+ 	 gunzip -d --force $dbsnp_idx_gz
+   """
+ }
 }
 
 process gunzip_golden_indel {
@@ -206,64 +173,13 @@ process gunzip_golden_indel {
   file "*.vcf" into golden_indel, golden_indel_variantrecalibrator_indels
   file "*.vcf.idx" into golden_indel_idx, golden_indel_idx_variantrecalibrator_indels
 
-  """
-  gunzip -d --force $golden_indel_gz
-  gunzip -d --force $golden_indel_idx_gz
-  """
-}
-
-process gunzip_hapmap {
-  tag "$hapmap_gz"
-	publishDir "${params.outdir}/reference"
-
-  input:
-  file hapmap_gz from hapmap_gz
-  file hapmap_idx_gz from hapmap_idx_gz
-
-	output:
-	file "*.vcf" into hapmap
-	file "*.vcf.idx" into hapmap_idx
-
-	"""
-	gunzip -d --force $hapmap_gz
-	gunzip -d --force $hapmap_idx_gz
-	"""
-}
-
-process gunzip_omni {
-  tag "$omni_gz"
-	publishDir "${params.outdir}/reference"
-
-  input:
-  file omni_gz from omni_gz
-  file omni_idx_gz from omni_idx_gz
-
-	output:
-	file "*.vcf" into omni
-	file "*.vcf.idx" into omni_idx
-
-	"""
-	gunzip -d --force $omni_gz
-	gunzip -d --force $omni_idx_gz
-	"""
-}
-
-process gunzip_phase1_snps {
-  tag "phase1_snps_gz"
-  publishDir "${params.outdir}/reference"
-
-  input:
-  file phase1_snps_gz from phase1_snps_gz
-  file phase1_snps_idx_gz from phase1_snps_idx_gz
-
-  output:
-  file "*.vcf" into phase1_snps
-  file "*.vcf.idx" into phase1_snps_idx
-
-  """
-  gunzip -d --force $phase1_snps_gz
-  gunzip -d --force $phase1_snps_idx_gz
-  """
+  script:
+if ( "${golden_indel_gz}".endsWith(".gz") ) {
+   """
+   gunzip -d --force $golden_indel_gz
+   gunzip -d --force $golden_indel_idx_gz
+   """
+ }
 }
 
 bwa_index = bwa_index_amb.merge(bwa_index_ann, bwa_index_bwt, bwa_index_pac, bwa_index_sa)
@@ -379,44 +295,45 @@ process IndexBam {
   """
 }
 
-haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, interval_list)
-haplotypecaller = indexed_bam_bqsr.combine(haplotypecaller_index)
-
+haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, indexed_bam_bqsr)
+haplotypecaller = interval_list.combine(haplotypecaller_index)
 
 process HaplotypeCaller {
-  tag "$bam_bqsr"
+  tag "$interval_list"
 	publishDir "${params.outdir}/HaplotypeCaller"
 	container 'broadinstitute/gatk:latest'
 
 	input:
-  set val(name), file(bam_bqsr), file(bai), file(fasta), file(fai), file(dict), file(interval_list) from haplotypecaller
+  set val(interval_list), file(fasta), file(fai), file(dict), val(name), file(bam_bqsr), file(bai) from haplotypecaller
 
 	output:
-	file("${name}.g.vcf") into haplotypecaller_gvcf
-  file("${name}.g.vcf.idx") into index
+	file("${interval_list}.g.vcf") into haplotypecaller_gvcf
+  file("${interval_list}.g.vcf.idx") into index
+  val(name) into sample
 
 	script:
 	"""
   gatk HaplotypeCaller \
     -R $fasta \
-    -O ${name}.g.vcf \
+    -O ${interval_list}.g.vcf \
     -I $bam_bqsr \
-    -L $interval_list \
-    -ERC GVCF
+    -ERC GVCF \
+    -L $interval_list
 	"""
 }
 
 process MergeVCFs {
-  tag "$haplotypecaller_gvcf"
+  tag "${name}.g.vcf"
 	publishDir "${params.outdir}/MergeVCFs"
 	container 'broadinstitute/gatk:latest'
 
 	input:
   file haplotypecaller_gvcf from haplotypecaller_gvcf.collect()
   file index from index.collect()
+  val name from sample
 
 	output:
-	set file("merged.g.vcf"), file("merged.g.vcf.idx") into mergevcfs
+	set file("${name}.g.vcf"), file("${name}.g.vcf.idx") into mergevcfs
 
 	script:
 	"""
@@ -427,6 +344,6 @@ process MergeVCFs {
 
   gatk MergeVcfs \
   --INPUT= input_variant_files.list \
-  --OUTPUT= merged.g.vcf
+  --OUTPUT= ${name}.g.vcf
 	"""
 }
