@@ -139,6 +139,7 @@ if (params.bwa_index_sa) {
 if (params.interval_list) {
     Channel.fromPath(params.interval_list)
            .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.interval_list}" }
+           .splitText()
            .into { interval_list; interval_list_hardfiltervcf }
 }
 // set gvcf
@@ -381,6 +382,7 @@ process IndexBam {
 haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, interval_list)
 haplotypecaller = indexed_bam_bqsr.combine(haplotypecaller_index)
 
+
 process HaplotypeCaller {
   tag "$bam_bqsr"
 	publishDir "${params.outdir}/HaplotypeCaller"
@@ -426,29 +428,5 @@ process MergeVCFs {
   gatk MergeVcfs \
   --INPUT= input_variant_files.list \
   --OUTPUT= merged.g.vcf
-	"""
-}
-
-
-process HardFilterVcf {
-  tag "$merged_vcf"
-	publishDir "${params.outdir}"
-	container 'broadinstitute/gatk:latest'
-
-	input:
-  set file(merged_vcf), file(index) from mergevcfs
-  file interval_list from interval_list_hardfiltervcf
-
-	output:
-  set file("output.vcf"), file("output.vcf.idx") into results
-
-	script:
-	"""
-  gatk VariantFiltration \
-  -V $merged_vcf \
-  -L $interval_list \
-  --genotype-filter-expression "QD < 2.0 || FS > 30.0 || SOR > 3.0 || MQ < 40.0 || MQRankSum < -3.0 || ReadPosRankSum < -3.0" \
-  --genotype-filter-name "HardFiltered" \
-  -O output.vcf
 	"""
 }
