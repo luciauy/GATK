@@ -296,8 +296,8 @@ process IndexBam {
 
   script:
   """
-  cp $bam aln.bam
-  mv aln.bam ${name}bam
+  cp $bam bam.bam
+  mv bam.bam ${name}bam
   samtools index ${name}.bam
   """
 }
