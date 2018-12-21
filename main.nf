@@ -192,7 +192,6 @@ bwa = reads_bwa.combine(bwa_index)
 
 process BWA {
   tag "$reads"
-	publishDir "${params.outdir}/MappedRead"
 	container 'kathrinklee/bwa:latest'
 
 	input:
@@ -209,7 +208,6 @@ process BWA {
 
 process BWA_sort {
   tag "$sam"
-	publishDir "${params.outdir}/MappedRead"
 	container 'comics/samtools:latest'
 
 	input:
@@ -226,7 +224,6 @@ process BWA_sort {
 
 process MarkDuplicates {
   tag "$bam_sort"
-	publishDir "${params.outdir}/MappedRead"
 	container 'broadinstitute/gatk'
 
 	input:
@@ -246,7 +243,6 @@ baserecalibrator = bam_markdup_baserecalibrator.combine(baserecalibrator_index)
 
 process BaseRecalibrator {
   tag "$bam_markdup"
-	publishDir "${params.outdir}/BaseRecalibrator"
 	container 'broadinstitute/gatk:latest'
 
 	input:
@@ -269,7 +265,6 @@ applybqsr = baserecalibrator_table.join(bam_markdup_applybqsr)
 
 process ApplyBQSR {
   tag "$baserecalibrator_table"
-	publishDir "${params.outdir}/BaseRecalibrator"
 	container 'broadinstitute/gatk:latest'
 
 	input:
@@ -286,6 +281,7 @@ process ApplyBQSR {
 
 process IndexBam {
   tag "$bam"
+  publishDir "${params.outdir}/Bam"
   container 'lifebitai/samtools:latest'
 
   input:
@@ -305,7 +301,6 @@ haplotypecaller = interval_list.combine(haplotypecaller_index)
 
 process HaplotypeCaller {
   tag "$interval_list"
-	publishDir "${params.outdir}/HaplotypeCaller"
 	container 'broadinstitute/gatk:latest'
 
 	input:
