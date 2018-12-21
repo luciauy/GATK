@@ -101,15 +101,14 @@ if (params.bwa_index_sa) {
            .ifEmpty { exit 1, "bwa_index_sa annotation file not found: ${params.bwa_index_sa}" }
            .set { bwa_index_sa }
 }
-if (params.interval_list) {
-    Channel.fromPath(params.interval_list)
-           .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.interval_list}" }
+if (params.intervals) {
+    Channel.fromPath(params.intervals)
+           .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.intervals}" }
            .splitText()
            .map { it -> it.trim() as Path }
            .into { interval_list; intervals }
 }
 
-intervals.subscribe{println "Interval: $it"}
 
 /*
  * Create a channel for input read files
@@ -137,9 +136,10 @@ if(params.singleEnd){
   exit 1, "Please specify either --singleEnd or --pairedEnd to execute the pipeline!"
 }
 
-reads_samplename.subscribe { println it }
+intervals.subscribe{println "Interval: $it"}
+reads_samplename.subscribe { println "Reads: $it"}
 
-
+if ( "${dbsnp_gz}".endsWith(".gz") ) {
 process gunzip_dbsnp {
   tag "$dbsnp_gz"
 	publishDir "${params.outdir}/reference"
@@ -153,14 +153,17 @@ process gunzip_dbsnp {
 	file "*.vcf.idx" into dbsnp_idx, dbsnp_idx_variantrecalibrator_snps, dbsnp_idx_variantrecalibrator_indels
 
   script:
-if ( "${dbsnp_gz}".endsWith(".gz") ) {
    """
    gunzip -d --force $dbsnp_gz
  	 gunzip -d --force $dbsnp_idx_gz
    """
  }
-}
+} else {
+  dbsnp_gz.into{ dbsnp; dbsnp_variantrecalibrator_snps; dbsnp_variantrecalibrator_indels }
+  dbsnp_idx_gz.into{ dbsnp_idx; dbsnp_idx_variantrecalibrator_snps; dbsnp_idx_variantrecalibrator_indels }
+ }
 
+if ( "${golden_indel_gz}".endsWith(".gz") ) {
 process gunzip_golden_indel {
   tag "$golden_indel_gz"
   publishDir "${params.outdir}/reference"
@@ -174,13 +177,15 @@ process gunzip_golden_indel {
   file "*.vcf.idx" into golden_indel_idx, golden_indel_idx_variantrecalibrator_indels
 
   script:
-if ( "${golden_indel_gz}".endsWith(".gz") ) {
    """
    gunzip -d --force $golden_indel_gz
    gunzip -d --force $golden_indel_idx_gz
    """
  }
-}
+} else {
+  golden_indel_gz.into{ golden_indel; golden_indel_variantrecalibrator_indels }
+  golden_indel_idx_gz.into{ golden_indel_idx; golden_indel_idx_variantrecalibrator_indels}
+ }
 
 bwa_index = bwa_index_amb.merge(bwa_index_ann, bwa_index_bwt, bwa_index_pac, bwa_index_sa)
 bwa = reads_bwa.combine(bwa_index)
