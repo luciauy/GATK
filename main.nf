@@ -139,57 +139,57 @@ if (params.reads) {
   exit 1, "Please specify either --reads singleEnd.fastq, --reads_folder pairedReads or --bam myfile.bam"
 }
 
-process gunzip_dbsnp {
-  tag "$dbsnp_gz"
+if (!params.bam) {
+  process gunzip_dbsnp {
+    tag "$dbsnp_gz"
 
-  input:
-  file dbsnp_gz from dbsnp_gz
-  file dbsnp_idx_gz from dbsnp_idx_gz
+    input:
+    file dbsnp_gz from dbsnp_gz
+    file dbsnp_idx_gz from dbsnp_idx_gz
 
-	output:
-	file "*.vcf" into dbsnp, dbsnp_variantrecalibrator_snps, dbsnp_variantrecalibrator_indels
-	file "*.vcf.idx" into dbsnp_idx, dbsnp_idx_variantrecalibrator_snps, dbsnp_idx_variantrecalibrator_indels
+  	output:
+  	file "*.vcf" into dbsnp, dbsnp_variantrecalibrator_snps, dbsnp_variantrecalibrator_indels
+  	file "*.vcf.idx" into dbsnp_idx, dbsnp_idx_variantrecalibrator_snps, dbsnp_idx_variantrecalibrator_indels
 
-  script:
-  if ( "${dbsnp_gz}".endsWith(".gz") ) {
-   """
-   gunzip -d --force $dbsnp_gz
- 	 gunzip -d --force $dbsnp_idx_gz
-   """
- } else {
-   """
-   cp $dbsnp_gz dbsnp.vcf
-   cp $dbsnp_idx_gz dbsnp.vcf.idx
-   """
- }
-}
+    script:
+    if ( "${dbsnp_gz}".endsWith(".gz") ) {
+     """
+     gunzip -d --force $dbsnp_gz
+   	 gunzip -d --force $dbsnp_idx_gz
+     """
+   } else {
+     """
+     cp $dbsnp_gz dbsnp.vcf
+     cp $dbsnp_idx_gz dbsnp.vcf.idx
+     """
+   }
+  }
 
-process gunzip_golden_indel {
-  tag "$golden_indel_gz"
+  process gunzip_golden_indel {
+    tag "$golden_indel_gz"
 
-  input:
-  file golden_indel_gz from golden_indel_gz
-  file golden_indel_idx_gz from golden_indel_idx_gz
+    input:
+    file golden_indel_gz from golden_indel_gz
+    file golden_indel_idx_gz from golden_indel_idx_gz
 
-  output:
-  file "*.vcf" into golden_indel, golden_indel_variantrecalibrator_indels
-  file "*.vcf.idx" into golden_indel_idx, golden_indel_idx_variantrecalibrator_indels
+    output:
+    file "*.vcf" into golden_indel, golden_indel_variantrecalibrator_indels
+    file "*.vcf.idx" into golden_indel_idx, golden_indel_idx_variantrecalibrator_indels
 
-  script:
-  if ( "${golden_indel_gz}".endsWith(".gz") ) {
-   """
-   gunzip -d --force $golden_indel_gz
-   gunzip -d --force $golden_indel_idx_gz
-   """
-  } else {
-   """
-   cp $golden_indel_gz golden_indel.vcf
-   cp $golden_indel_idx_gz golden_indel.vcf.idx
-   """
- }
-}
+    script:
+    if ( "${golden_indel_gz}".endsWith(".gz") ) {
+     """
+     gunzip -d --force $golden_indel_gz
+     gunzip -d --force $golden_indel_idx_gz
+     """
+    } else {
+     """
+     cp $golden_indel_gz golden_indel.vcf
+     cp $golden_indel_idx_gz golden_indel.vcf.idx
+     """
+   }
+  }
 
-if(!params.bam){
   bwa_index = bwa_index_amb.merge(bwa_index_ann, bwa_index_bwt, bwa_index_pac, bwa_index_sa)
   bwa = reads_bwa.combine(bwa_index)
 
