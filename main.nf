@@ -46,66 +46,31 @@ if (params.dict) {
            .ifEmpty { exit 1, "dict annotation file not found: ${params.dict}" }
            .into { dict_bwa; dict_baserecalibrator; dict_haplotypecaller; dict_genotypegvcfs; dict_variantrecalibrator_snps; dict_variantrecalibrator_tranches }
 }
-params.dbsnp = params.genome ? params.genomes[ params.genome ].dbsnp ?: false : false
-if (params.dbsnp) {
-    Channel.fromPath(params.dbsnp)
-           .ifEmpty { exit 1, "dbsnp annotation file not found: ${params.dbsnp}" }
-           .into { dbsnp; dbsnp_variantrecalibrator_snps; dbsnp_variantrecalibrator_indels }
+params.dbsnp_gz = params.genome ? params.genomes[ params.genome ].dbsnp_gz ?: false : false
+if (params.dbsnp_gz) {
+    Channel.fromPath(params.dbsnp_gz)
+           .ifEmpty { exit 1, "dbsnp annotation file not found: ${params.dbsnp_gz}" }
+           .set { dbsnp_gz}
 }
-params.dbsnp_idx = params.genome ? params.genomes[ params.genome ].dbsnp_idx ?: false : false
-if (params.dbsnp_idx) {
-    Channel.fromPath(params.dbsnp_idx)
-           .ifEmpty { exit 1, "dbsnp_idx annotation file not found: ${params.dbsnp_idx}" }
-           .into { dbsnp_idx; dbsnp_idx_variantrecalibrator_snps; dbsnp_idx_variantrecalibrator_indels }
+params.dbsnp_idx_gz = params.genome ? params.genomes[ params.genome ].dbsnp_idx_gz ?: false : false
+if (params.dbsnp_idx_gz) {
+    Channel.fromPath(params.dbsnp_idx_gz)
+           .ifEmpty { exit 1, "dbsnp_idx_gz annotation file not found: ${params.dbsnp_idx_gz}" }
+           .set { dbsnp_idx_gz}
 }
-params.golden_indel = params.genome ? params.genomes[ params.genome ].golden_indel ?: false : false
-if (params.golden_indel) {
-    Channel.fromPath(params.golden_indel)
-           .ifEmpty { exit 1, "golden_indel annotation file not found: ${params.golden_indel}" }
-           .into { golden_indel; golden_indel_variantrecalibrator_indels }
+params.golden_indel_gz = params.genome ? params.genomes[ params.genome ].golden_indel_gz ?: false : false
+if (params.golden_indel_gz) {
+    Channel.fromPath(params.golden_indel_gz)
+           .ifEmpty { exit 1, "golden_indel_gz annotation file not found: ${params.golden_indel_gz}" }
+           .set { golden_indel_gz }
 }
-params.golden_indel_idx = params.genome ? params.genomes[ params.genome ].golden_indel_idx ?: false : false
-if (params.golden_indel_idx) {
-    Channel.fromPath(params.golden_indel_idx)
-           .ifEmpty { exit 1, "golden_indel_idx annotation file not found: ${params.golden_indel_idx}" }
-           .into { golden_indel_idx; golden_indel_idx_variantrecalibrator_indels}
+params.golden_indel_idx_gz = params.genome ? params.genomes[ params.genome ].golden_indel_idx_gz ?: false : false
+if (params.golden_indel_idx_gz) {
+    Channel.fromPath(params.golden_indel_idx_gz)
+           .ifEmpty { exit 1, "golden_indel_idx_gz annotation file not found: ${params.golden_indel_idx_gz}" }
+           .set { golden_indel_idx_gz }
 }
-params.hapmap_gz = params.genome ? params.genomes[ params.genome ].hapmap_gz ?: false : false
-if (params.hapmap_gz) {
-    Channel.fromPath(params.hapmap_gz)
-           .ifEmpty { exit 1, "hapmap_gz annotation file not found: ${params.hapmap_gz}" }
-           .set { hapmap_gz }
-}
-params.hapmap_idx_gz = params.genome ? params.genomes[ params.genome ].hapmap_idx_gz ?: false : false
-if (params.hapmap_idx_gz) {
-    Channel.fromPath(params.hapmap_idx_gz)
-           .ifEmpty { exit 1, "hapmap_idx_gz annotation file not found: ${params.hapmap_idx_gz}" }
-           .set { hapmap_idx_gz }
-}
-params.omni_gz = params.genome ? params.genomes[ params.genome ].omni_gz ?: false : false
-if (params.omni_gz) {
-    Channel.fromPath(params.omni_gz)
-           .ifEmpty { exit 1, "omni_gz annotation file not found: ${params.omni_gz}" }
-           .set { omni_gz }
-}
-params.omni_idx_gz = params.genome ? params.genomes[ params.genome ].omni_idx_gz ?: false : false
-if (params.omni_idx_gz) {
-    Channel.fromPath(params.omni_idx_gz)
-           .ifEmpty { exit 1, "omni_idx_gz annotation file not found: ${params.omni_idx_gz}" }
-           .set { omni_idx_gz }
-}
-params.phase1_snps = params.genome ? params.genomes[ params.genome ].phase1_snps ?: false : false
-if (params.phase1_snps) {
-    Channel.fromPath(params.phase1_snps)
-           .ifEmpty { exit 1, "phase1_snps annotation file not found: ${params.phase1_snps}" }
-           .set { phase1_snps }
-}
-params.phase1_snps_idx = params.genome ? params.genomes[ params.genome ].phase1_snps_idx ?: false : false
-if (params.phase1_snps_idx) {
-    Channel.fromPath(params.phase1_snps_idx)
-           .ifEmpty { exit 1, "phase1_snps_idx annotation file not found: ${params.phase1_snps_idx}" }
-           .set { phase1_snps_idx }
-}
+
 params.bwa_index_amb = params.genome ? params.genomes[ params.genome ].bwa_index_amb ?: false : false
 if (params.bwa_index_amb) {
     Channel.fromPath(params.bwa_index_amb)
@@ -136,73 +101,97 @@ if (params.bwa_index_sa) {
            .ifEmpty { exit 1, "bwa_index_sa annotation file not found: ${params.bwa_index_sa}" }
            .set { bwa_index_sa }
 }
-
+if (params.intervals) {
+    Channel.fromPath(params.intervals)
+           .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.intervals}" }
+           .splitText()
+           .map { it -> it.trim() as Path }
+           .into { interval_list; intervals }
+}
 
 
 /*
  * Create a channel for input read files
  * Dump can be used for debugging purposes, e.g. using the -dump-channels operator on run
  */
-if(params.singleEnd){
-   reads="${params.reads_folder}/*.${params.reads_extension}"
+if (params.reads) {
   Channel
-      .fromPath(reads)
+      .fromPath(params.reads)
       .map { file -> tuple(file.baseName, file) }
       .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
       .combine(fasta_bwa)
       .dump(tag:'input')
       .into { reads_samplename; reads_bwa }
-
-} else if (params.pairedEnd){
-  reads="${params.reads_folder}/${params.reads_prefix}_{1,2}.${params.reads_extension}"
-  Channel
-      .fromFilePairs(reads, size: 2)
-      .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
-      .combine(fastaChannel)
-      .dump(tag:'input')
-      .into { reads_samplename; reads_bwa }
+  } else if (params.reads_folder){
+    reads="${params.reads_folder}/${params.reads_prefix}_{1,2}.${params.reads_extension}"
+    Channel
+        .fromFilePairs(reads, size: 2)
+        .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
+        .combine(fasta_bwa)
+        .dump(tag:'input')
+        .into { reads_samplename; reads_bwa }
+  } else if (params.bam) {
+  Channel.fromPath(params.bam)
+         .map { file -> tuple(file.baseName, file) }
+         .ifEmpty { exit 1, "BAM file not found: ${params.bam}" }
+         .set { bam_bqsr }
 } else {
-  exit 1, "Please specify either --singleEnd or --pairedEnd to execute the pipeline!"
+  exit 1, "Please specify either --reads singleEnd.fastq, --reads_folder pairedReads or --bam myfile.bam"
 }
 
-reads_samplename.subscribe { println it }
+
+intervals.subscribe{println "Interval: $it"}
+reads_samplename.subscribe { println "Reads: $it"}
 
 
-
-process gunzip_hapmap {
-  tag "$hapmap_gz"
-	publishDir "${params.outdir}/reference"
+process gunzip_dbsnp {
+  tag "$dbsnp_gz"
 
   input:
-  file hapmap_gz from hapmap_gz
-  file hapmap_idx_gz from hapmap_idx_gz
+  file dbsnp_gz from dbsnp_gz
+  file dbsnp_idx_gz from dbsnp_idx_gz
 
 	output:
-	file "*.vcf" into hapmap
-	file "*.vcf.idx" into hapmap_idx
+	file "*.vcf" into dbsnp, dbsnp_variantrecalibrator_snps, dbsnp_variantrecalibrator_indels
+	file "*.vcf.idx" into dbsnp_idx, dbsnp_idx_variantrecalibrator_snps, dbsnp_idx_variantrecalibrator_indels
 
-	"""
-	gunzip -d --force $hapmap_gz
-	gunzip -d --force $hapmap_idx_gz
-	"""
+  script:
+  if ( "${dbsnp_gz}".endsWith(".gz") ) {
+   """
+   gunzip -d --force $dbsnp_gz
+ 	 gunzip -d --force $dbsnp_idx_gz
+   """
+ } else {
+   """
+   cp $dbsnp_gz dbsnp.vcf
+   cp $dbsnp_idx_gz dbsnp.vcf.idx
+   """
+ }
 }
 
-process gunzip_omni {
-  tag "$omni_gz"
-	publishDir "${params.outdir}/reference"
+process gunzip_golden_indel {
+  tag "$golden_indel_gz"
 
   input:
-  file omni_gz from omni_gz
-  file omni_idx_gz from omni_idx_gz
+  file golden_indel_gz from golden_indel_gz
+  file golden_indel_idx_gz from golden_indel_idx_gz
 
-	output:
-	file "*.vcf" into omni
-	file "*.vcf.idx" into omni_idx
+  output:
+  file "*.vcf" into golden_indel, golden_indel_variantrecalibrator_indels
+  file "*.vcf.idx" into golden_indel_idx, golden_indel_idx_variantrecalibrator_indels
 
-	"""
-	gunzip -d --force $omni_gz
-	gunzip -d --force $omni_idx_gz
-	"""
+  script:
+  if ( "${golden_indel_gz}".endsWith(".gz") ) {
+   """
+   gunzip -d --force $golden_indel_gz
+   gunzip -d --force $golden_indel_idx_gz
+   """
+  } else {
+   """
+   cp $golden_indel_gz golden_indel.vcf
+   cp $golden_indel_idx_gz golden_indel.vcf.idx
+   """
+ }
 }
 
 bwa_index = bwa_index_amb.merge(bwa_index_ann, bwa_index_bwt, bwa_index_pac, bwa_index_sa)
@@ -210,7 +199,6 @@ bwa = reads_bwa.combine(bwa_index)
 
 process BWA {
   tag "$reads"
-	publishDir "${params.outdir}/MappedRead"
 	container 'kathrinklee/bwa:latest'
 
 	input:
@@ -218,6 +206,9 @@ process BWA {
 
 	output:
 	set val(name), file("${name}.sam") into sam
+
+  when:
+  params.reads || params.reads_folder
 
 	"""
 	bwa mem -M -R '@RG\\tID:${name}\\tSM:${name}\\tPL:Illumina' $fasta $reads > ${name}.sam
@@ -227,7 +218,6 @@ process BWA {
 
 process BWA_sort {
   tag "$sam"
-	publishDir "${params.outdir}/MappedRead"
 	container 'comics/samtools:latest'
 
 	input:
@@ -235,6 +225,9 @@ process BWA_sort {
 
 	output:
 	set val(name), file("${name}-sorted.bam") into bam_sort
+
+  when:
+  params.reads || params.reads_folder
 
 	"""
 	samtools sort -o ${name}-sorted.bam -O BAM $sam
@@ -244,14 +237,16 @@ process BWA_sort {
 
 process MarkDuplicates {
   tag "$bam_sort"
-	publishDir "${params.outdir}/MappedRead"
-	container 'broadinstitute/gatk'
+	container 'broadinstitute/gatk:latest'
 
 	input:
 	set val(name), file(bam_sort) from bam_sort
 
 	output:
 	set val(name), file("${name}_MarkDup.bam") into bam_markdup_baserecalibrator, bam_markdup_applybqsr
+
+  when:
+  params.reads || params.reads_folder
 
 	"""
 	gatk MarkDuplicates -I $bam_sort -M metrics.txt -O ${name}_MarkDup.bam
@@ -264,7 +259,6 @@ baserecalibrator = bam_markdup_baserecalibrator.combine(baserecalibrator_index)
 
 process BaseRecalibrator {
   tag "$bam_markdup"
-	publishDir "${params.outdir}/BaseRecalibrator"
 	container 'broadinstitute/gatk:latest'
 
 	input:
@@ -272,6 +266,9 @@ process BaseRecalibrator {
 
 	output:
 	set val(name), file("${name}_recal_data.table") into baserecalibrator_table
+
+  when:
+  params.reads || params.reads_folder
 
 	"""
 	gatk BaseRecalibrator \
@@ -287,7 +284,6 @@ applybqsr = baserecalibrator_table.join(bam_markdup_applybqsr)
 
 process ApplyBQSR {
   tag "$baserecalibrator_table"
-	publishDir "${params.outdir}/BaseRecalibrator"
 	container 'broadinstitute/gatk:latest'
 
 	input:
@@ -295,6 +291,9 @@ process ApplyBQSR {
 
 	output:
 	set val(name), file("${name}_bqsr.bam") into bam_bqsr
+
+  when:
+  params.reads || params.reads_folder
 
 	script:
 	"""
@@ -304,6 +303,7 @@ process ApplyBQSR {
 
 process IndexBam {
   tag "$bam"
+  publishDir "${params.outdir}/Bam"
   container 'lifebitai/samtools:latest'
 
   input:
@@ -318,224 +318,54 @@ process IndexBam {
   """
 }
 
-haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller)
-haplotypecaller = indexed_bam_bqsr.combine(haplotypecaller_index)
+haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, indexed_bam_bqsr)
+haplotypecaller = interval_list.combine(haplotypecaller_index)
 
 process HaplotypeCaller {
-  tag "$bam_bqsr"
-	publishDir "${params.outdir}/HaplotypeCaller"
+  tag "$interval_list"
 	container 'broadinstitute/gatk:latest'
 
 	input:
-  set val(name), file(bam_bqsr), file(bai), file(fasta), file(fai), file(dict) from haplotypecaller
+  set val(interval_list), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai) from haplotypecaller
 
 	output:
-	file("${name}.g.vcf") into haplotypecaller_gvcf
+	file("${sample}.g.vcf") into haplotypecaller_gvcf
+  file("${sample}.g.vcf.idx") into index
+  val(sample) into sample
 
 	script:
 	"""
   gatk HaplotypeCaller \
-  -R $fasta \
-  -I $bam_bqsr \
-  -O ${name}.g.vcf \
-  -ERC GVCF
-	"""
-}
-
-process GenomicsDBImport {
-  tag "$haplotypecaller_gvcf"
-	publishDir "${params.outdir}/HaplotypeCaller"
-	container 'broadinstitute/gatk:latest'
-
-	input:
-	file haplotypecaller_gvcf from haplotypecaller_gvcf.collect()
-
-	output:
-	file("my_database") into genomicsdbimport
-
-	script:
-	"""
-  ## make sample map
-  for gvcf in ${haplotypecaller_gvcf}; do
-      readlink -f \$gvcf | cat >> gvcf.txt
-      basename \$gvcf .g.vcf | cat >> name.txt
-  done
-  paste name.txt gvcf.txt > cohort.sample_map
-
-  gatk GenomicsDBImport \
-     --genomicsdb-workspace-path my_database \
-     -L 20 \
-     --sample-name-map cohort.sample_map
-	"""
-}
-
-process GenotypeGVCFs {
-  tag "$db"
-	publishDir "${params.outdir}/HaplotypeCaller"
-	container 'broadinstitute/gatk:latest'
-
-	input:
-	file fasta from fasta_genotypegvcfs
-	file fai from fai_genotypegvcfs
-	file dict from dict_genotypegvcfs
-	file db from genomicsdbimport
-
-	output:
-	file 'haplotypecaller.vcf' into haplotypecaller_vcf, haplotypecaller_vcf_applyvqsr_snps
-
-	script:
-	"""
-  gatk GenotypeGVCFs \
-    -V gendb://$db \
     -R $fasta \
-    -G StandardAnnotation \
-    -O haplotypecaller.vcf
+    -O ${sample}.g.vcf \
+    -I $bam_bqsr \
+    -ERC GVCF \
+    -L $interval_list
 	"""
 }
 
-
-
-process VariantRecalibrator_SNPs {
-  tag "$haplotypecaller_vcf"
-	publishDir "${params.outdir}/VariantRecalibrator"
+process MergeVCFs {
+  tag "${name[0]}.g.vcf"
+	publishDir "${params.outdir}"
 	container 'broadinstitute/gatk:latest'
 
 	input:
-	file fasta from fasta_variantrecalibrator_snps
-	file fai from fai_variantrecalibrator_snps
-	file dict from dict_variantrecalibrator_snps
-	file haplotypecaller_vcf from haplotypecaller_vcf
-	file hapmap from hapmap
-	file hapmap_idx from hapmap_idx
-	file omni from omni
-	file omni_idx from omni_idx
-	file phase1_snps from phase1_snps
-	file phase1_snps_idx from phase1_snps_idx
-	file dbsnp from dbsnp_variantrecalibrator_snps
-	file dbsnp_idx from dbsnp_idx_variantrecalibrator_snps
+  file ('*.g.vcf') from haplotypecaller_gvcf.collect()
+  file ('*.g.vcf.idx') from index.collect()
+  val name from sample.collect()
 
 	output:
-	file 'recalibrate_SNP.recal' into variantrecalibrator_recal
-	file 'recalibrate_SNP.recal.idx' into variantrecalibrator_recal_idx
-	file 'recalibrate_SNP.tranches' into variantrecalibrator_tranches
+	set file("${name[0]}.g.vcf"), file("${name[0]}.g.vcf.idx") into mergevcfs
 
 	script:
 	"""
-	gatk VariantRecalibrator \
-	-V $haplotypecaller_vcf \
- 	-R $fasta \
-	-resource hapmap,known=false,training=true,truth=true,prior=15.0:./$hapmap \
-	-resource omni,known=false,training=true,truth=true,prior=12.0:./$omni \
-    	-resource 1000G,known=false,training=true,truth=false,prior=10.0:./$phase1_snps \
-    	-resource dbsnp,known=true,training=false,truth=false,prior=2.0:./$dbsnp \
-	-an DP \
-    	-an QD \
-	-an FS \
-    	-an SOR \
-    	-an MQ \
-    	-an MQRankSum \
-    	-an ReadPosRankSum \
-    	-mode SNP \
-    	-tranche 100.0 -tranche 99.9 -tranche 99.0 -tranche 90.0 \
-	--max-gaussians 8 \
-    	-O recalibrate_SNP.recal \
-    	--tranches-file recalibrate_SNP.tranches
-	"""
-}
+  ## make list of input variant files
+  for vcf in \$(ls *vcf); do
+    echo \$vcf >> input_variant_files.list
+  done
 
-
-
-process ApplyVQSR_SNPs {
-  tag "$variantrecalibrator_recal"
-	publishDir "${params.outdir}/VariantRecalibrator"
-	container 'broadinstitute/gatk:latest'
-
-	input:
-	file haplotypecaller_vcf from haplotypecaller_vcf_applyvqsr_snps
-	file variantrecalibrator_recal from variantrecalibrator_recal
-	file variantrecalibrator_recal_idx from variantrecalibrator_recal_idx
-	file variantrecalibrator_tranches from variantrecalibrator_tranches
-
-	output:
-	file 'recalibrated_snps_raw_indels.vcf' into recalibrated_snps_raw_indels, recalibrated_snps_raw_indels_applyvqsr_indels
-
-	script:
-	"""
-	gatk ApplyVQSR \
-	-V $haplotypecaller_vcf \
-	--recal-file $variantrecalibrator_recal \
-	--tranches-file $variantrecalibrator_tranches \
-	-mode SNP \
-	-ts-filter-level 99.0 \
-	-O recalibrated_snps_raw_indels.vcf
-	"""
-}
-
-
-
-process VariantRecalibrator_INDELs {
-  tag "$recalibrated_snps_raw_indels"
-	publishDir "${params.outdir}/VariantRecalibrator"
-	container 'broadinstitute/gatk:latest'
-
-	input:
-	file fasta from fasta_variantrecalibrator_tranches
-	file fai from fai_variantrecalibrator_tranches
-	file dict from dict_variantrecalibrator_tranches
-	file recalibrated_snps_raw_indels from recalibrated_snps_raw_indels
-	file dbsnp from dbsnp_variantrecalibrator_indels
-	file dbsnp_idx from dbsnp_idx_variantrecalibrator_indels
-	file golden_indel from golden_indel_variantrecalibrator_indels
-	file golden_indel_idx from golden_indel_idx_variantrecalibrator_indels
-
-	output:
-	file 'recalibrate_INDEL.recal' into variantrecalibrator_indel_recal
-	file 'recalibrate_INDEL.recal.idx' into variantrecalibrator_indel_recal_idx
-	file 'recalibrate_INDEL.tranches' into variantrecalibrator_indel_tranches
-
-	script:
-	"""
-	gatk VariantRecalibrator \
-	-V $recalibrated_snps_raw_indels \
- 	-R $fasta \
-	--resource mills,known=false,training=true,truth=true,prior=12.0:./$golden_indel \
-    	--resource dbsnp,known=true,training=false,truth=false,prior=2.0:./$dbsnp \
-	-an QD \
-    	-an DP \
-    	-an FS \
-	-an SOR \
-    	-an MQRankSum \
-    	-an ReadPosRankSum \
-    	-mode INDEL \
-    	-tranche 100.0 -tranche 99.9 -tranche 99.0 -tranche 90.0 \
-	--max-gaussians 4 \
-    	-O recalibrate_INDEL.recal \
-    	--tranches-file recalibrate_INDEL.tranches
-	"""
-}
-
-process ApplyVQSR_INDELs {
-  tag "$recalibrated_snps_raw_indels"
-	publishDir "${params.outdir}/VariantRecalibrator"
-	container 'broadinstitute/gatk:latest'
-
-	input:
-	file recalibrated_snps_raw_indels from recalibrated_snps_raw_indels_applyvqsr_indels
-	file variantrecalibrator_indel_recal from variantrecalibrator_indel_recal
-	file variantrecalibrator_indel_recal_idx from variantrecalibrator_indel_recal_idx
-	file variantrecalibrator_indel_tranches from variantrecalibrator_indel_tranches
-
-	output:
-	file 'recalibrated_variants.vcf' into recalibrated_variants_vcf
-
-	script:
-	"""
-	gatk ApplyVQSR \
-	-V $recalibrated_snps_raw_indels \
-	--recal-file $variantrecalibrator_indel_recal \
-	--tranches-file $variantrecalibrator_indel_tranches \
-	-mode INDEL \
-	-ts-filter-level 99.0 \
-	-O recalibrated_variants.vcf
+  gatk MergeVcfs \
+  --INPUT= input_variant_files.list \
+  --OUTPUT= ${name[0]}.g.vcf
 	"""
 }
