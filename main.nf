@@ -127,7 +127,7 @@ if (params.reads) {
     Channel
         .fromFilePairs(reads, size: 2)
         .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
-        .combine(fastaChannel)
+        .combine(fasta_bwa)
         .dump(tag:'input')
         .into { reads_samplename; reads_bwa }
   } else if (params.bam) {
