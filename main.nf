@@ -139,11 +139,6 @@ if (params.reads) {
   exit 1, "Please specify either --reads singleEnd.fastq, --reads_folder pairedReads or --bam myfile.bam"
 }
 
-
-intervals.subscribe{println "Interval: $it"}
-reads_samplename.subscribe { println "Reads: $it"}
-
-
 process gunzip_dbsnp {
   tag "$dbsnp_gz"
 
@@ -194,8 +189,9 @@ process gunzip_golden_indel {
  }
 }
 
-bwa_index = bwa_index_amb.merge(bwa_index_ann, bwa_index_bwt, bwa_index_pac, bwa_index_sa)
-bwa = reads_bwa.combine(bwa_index)
+if(!params.bam){
+  bwa_index = bwa_index_amb.merge(bwa_index_ann, bwa_index_bwt, bwa_index_pac, bwa_index_sa)
+  bwa = reads_bwa.combine(bwa_index)
 
 process BWA {
   tag "$reads"
@@ -207,14 +203,11 @@ process BWA {
 	output:
 	set val(name), file("${name}.sam") into sam
 
-  when:
-  params.reads || params.reads_folder
-
 	"""
 	bwa mem -M -R '@RG\\tID:${name}\\tSM:${name}\\tPL:Illumina' $fasta $reads > ${name}.sam
 	"""
+  }
 
-}
 
 process BWA_sort {
   tag "$sam"
@@ -225,9 +218,6 @@ process BWA_sort {
 
 	output:
 	set val(name), file("${name}-sorted.bam") into bam_sort
-
-  when:
-  params.reads || params.reads_folder
 
 	"""
 	samtools sort -o ${name}-sorted.bam -O BAM $sam
@@ -244,9 +234,6 @@ process MarkDuplicates {
 
 	output:
 	set val(name), file("${name}_MarkDup.bam") into bam_markdup_baserecalibrator, bam_markdup_applybqsr
-
-  when:
-  params.reads || params.reads_folder
 
 	"""
 	gatk MarkDuplicates -I $bam_sort -M metrics.txt -O ${name}_MarkDup.bam
@@ -266,9 +253,6 @@ process BaseRecalibrator {
 
 	output:
 	set val(name), file("${name}_recal_data.table") into baserecalibrator_table
-
-  when:
-  params.reads || params.reads_folder
 
 	"""
 	gatk BaseRecalibrator \
@@ -292,29 +276,29 @@ process ApplyBQSR {
 	output:
 	set val(name), file("${name}_bqsr.bam") into bam_bqsr
 
-  when:
-  params.reads || params.reads_folder
-
 	script:
 	"""
 	gatk ApplyBQSR -I $bam_markdup -bqsr $baserecalibrator_table -O ${name}_bqsr.bam
 	"""
 }
+}
 
 process IndexBam {
   tag "$bam"
-  publishDir "${params.outdir}/Bam"
+  publishDir "${params.outdir}/Bam", mode: 'copy'
   container 'lifebitai/samtools:latest'
 
   input:
   set val(name), file(bam) from bam_bqsr
 
   output:
-  set val(name), file("${name}_bqsr.bam"), file("${name}_bqsr.bam.bai") into indexed_bam_bqsr
+  set val(name), file("${name}.bam"), file("${name}.bam.bai") into indexed_bam_bqsr
 
   script:
   """
-  samtools index $bam
+  cp $bam aln.bam
+  mv aln.bam ${name}bam
+  samtools index ${name}.bam
   """
 }
 
@@ -346,7 +330,7 @@ process HaplotypeCaller {
 
 process MergeVCFs {
   tag "${name[0]}.g.vcf"
-	publishDir "${params.outdir}"
+	publishDir "${params.outdir}", mode: 'copy'
 	container 'broadinstitute/gatk:latest'
 
 	input:
