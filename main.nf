@@ -114,35 +114,38 @@ if (params.intervals) {
  * Create a channel for input read files
  * Dump can be used for debugging purposes, e.g. using the -dump-channels operator on run
  */
-if(params.singleEnd){
-   reads="${params.reads_folder}/*.${params.reads_extension}"
+if (params.reads) {
   Channel
-      .fromPath(reads)
+      .fromPath(params.reads)
       .map { file -> tuple(file.baseName, file) }
       .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
       .combine(fasta_bwa)
       .dump(tag:'input')
       .into { reads_samplename; reads_bwa }
-
-} else if (params.pairedEnd){
-  reads="${params.reads_folder}/${params.reads_prefix}_{1,2}.${params.reads_extension}"
-  Channel
-      .fromFilePairs(reads, size: 2)
-      .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
-      .combine(fastaChannel)
-      .dump(tag:'input')
-      .into { reads_samplename; reads_bwa }
+  } else if (params.reads_folder){
+    reads="${params.reads_folder}/${params.reads_prefix}_{1,2}.${params.reads_extension}"
+    Channel
+        .fromFilePairs(reads, size: 2)
+        .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
+        .combine(fastaChannel)
+        .dump(tag:'input')
+        .into { reads_samplename; reads_bwa }
+  } else if (params.bam) {
+  Channel.fromPath(params.bam)
+         .map { file -> tuple(file.baseName, file) }
+         .ifEmpty { exit 1, "BAM file not found: ${params.bam}" }
+         .set { bam_bqsr }
 } else {
-  exit 1, "Please specify either --singleEnd or --pairedEnd to execute the pipeline!"
+  exit 1, "Please specify either --reads singleEnd.fastq, --reads_folder pairedReads or --bam myfile.bam"
 }
+
 
 intervals.subscribe{println "Interval: $it"}
 reads_samplename.subscribe { println "Reads: $it"}
 
-if ( "${dbsnp_gz}".endsWith(".gz") ) {
+
 process gunzip_dbsnp {
   tag "$dbsnp_gz"
-	publishDir "${params.outdir}/reference"
 
   input:
   file dbsnp_gz from dbsnp_gz
@@ -153,20 +156,21 @@ process gunzip_dbsnp {
 	file "*.vcf.idx" into dbsnp_idx, dbsnp_idx_variantrecalibrator_snps, dbsnp_idx_variantrecalibrator_indels
 
   script:
+  if ( "${dbsnp_gz}".endsWith(".gz") ) {
    """
    gunzip -d --force $dbsnp_gz
  	 gunzip -d --force $dbsnp_idx_gz
    """
+ } else {
+   """
+   cp $dbsnp_gz dbsnp.vcf
+   cp $dbsnp_idx_gz dbsnp.vcf.idx
+   """
  }
-} else {
-  dbsnp_gz.into{ dbsnp; dbsnp_variantrecalibrator_snps; dbsnp_variantrecalibrator_indels }
-  dbsnp_idx_gz.into{ dbsnp_idx; dbsnp_idx_variantrecalibrator_snps; dbsnp_idx_variantrecalibrator_indels }
- }
+}
 
-if ( "${golden_indel_gz}".endsWith(".gz") ) {
 process gunzip_golden_indel {
   tag "$golden_indel_gz"
-  publishDir "${params.outdir}/reference"
 
   input:
   file golden_indel_gz from golden_indel_gz
@@ -177,15 +181,18 @@ process gunzip_golden_indel {
   file "*.vcf.idx" into golden_indel_idx, golden_indel_idx_variantrecalibrator_indels
 
   script:
+  if ( "${golden_indel_gz}".endsWith(".gz") ) {
    """
    gunzip -d --force $golden_indel_gz
    gunzip -d --force $golden_indel_idx_gz
    """
+  } else {
+   """
+   cp $golden_indel_gz golden_indel.vcf
+   cp $golden_indel_idx_gz golden_indel.vcf.idx
+   """
  }
-} else {
-  golden_indel_gz.into{ golden_indel; golden_indel_variantrecalibrator_indels }
-  golden_indel_idx_gz.into{ golden_indel_idx; golden_indel_idx_variantrecalibrator_indels}
- }
+}
 
 bwa_index = bwa_index_amb.merge(bwa_index_ann, bwa_index_bwt, bwa_index_pac, bwa_index_sa)
 bwa = reads_bwa.combine(bwa_index)
@@ -199,6 +206,9 @@ process BWA {
 
 	output:
 	set val(name), file("${name}.sam") into sam
+
+  when:
+  params.reads || params.reads_folder
 
 	"""
 	bwa mem -M -R '@RG\\tID:${name}\\tSM:${name}\\tPL:Illumina' $fasta $reads > ${name}.sam
@@ -216,6 +226,9 @@ process BWA_sort {
 	output:
 	set val(name), file("${name}-sorted.bam") into bam_sort
 
+  when:
+  params.reads || params.reads_folder
+
 	"""
 	samtools sort -o ${name}-sorted.bam -O BAM $sam
 	"""
@@ -224,13 +237,16 @@ process BWA_sort {
 
 process MarkDuplicates {
   tag "$bam_sort"
-	container 'broadinstitute/gatk'
+	container 'broadinstitute/gatk:latest'
 
 	input:
 	set val(name), file(bam_sort) from bam_sort
 
 	output:
 	set val(name), file("${name}_MarkDup.bam") into bam_markdup_baserecalibrator, bam_markdup_applybqsr
+
+  when:
+  params.reads || params.reads_folder
 
 	"""
 	gatk MarkDuplicates -I $bam_sort -M metrics.txt -O ${name}_MarkDup.bam
@@ -250,6 +266,9 @@ process BaseRecalibrator {
 
 	output:
 	set val(name), file("${name}_recal_data.table") into baserecalibrator_table
+
+  when:
+  params.reads || params.reads_folder
 
 	"""
 	gatk BaseRecalibrator \
@@ -272,6 +291,9 @@ process ApplyBQSR {
 
 	output:
 	set val(name), file("${name}_bqsr.bam") into bam_bqsr
+
+  when:
+  params.reads || params.reads_folder
 
 	script:
 	"""
