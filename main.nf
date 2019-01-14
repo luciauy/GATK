@@ -322,7 +322,7 @@ process HaplotypeCaller {
 	script:
 	"""
   gatk HaplotypeCaller \
-    --java-options "-Xmx${task.cpus}G \
+    --java-options "-Xmx${task.cpus}G" \
     -R $fasta \
     -O ${sample}.g.vcf \
     -I $bam_bqsr \
