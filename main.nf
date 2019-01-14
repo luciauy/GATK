@@ -26,6 +26,7 @@ if (params.help) {
   exit 1
 }
 
+int threads = Runtime.getRuntime().availableProcessors()
 
 // Validate inputs
 params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
@@ -308,6 +309,7 @@ haplotypecaller = interval_list.combine(haplotypecaller_index)
 process HaplotypeCaller {
   tag "$interval_list"
 	container 'broadinstitute/gatk:latest'
+  cpus threads
 
 	input:
   set val(interval_list), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai) from haplotypecaller
@@ -320,6 +322,7 @@ process HaplotypeCaller {
 	script:
 	"""
   gatk HaplotypeCaller \
+    --java-options "-Xmx${task.cpus}G" \
     -R $fasta \
     -O ${sample}.g.vcf \
     -I $bam_bqsr \
