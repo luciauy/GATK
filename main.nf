@@ -235,6 +235,7 @@ process MarkDuplicates {
 
 	output:
 	set val(name), file("${name}_MarkDup.bam") into bam_markdup_baserecalibrator, bam_markdup_applybqsr
+  file "metrics.txt" into markdup_multiqc
 
 	"""
 	gatk MarkDuplicates -I $bam_sort -M metrics.txt -O ${name}_MarkDup.bam
@@ -298,7 +299,7 @@ process IndexBam {
   script:
   """
   cp $bam bam.bam
-  mv bam.bam ${name}bam
+  mv bam.bam ${name}.bam
   samtools index ${name}.bam
   """
 }
@@ -309,7 +310,6 @@ haplotypecaller = interval_list.combine(haplotypecaller_index)
 process HaplotypeCaller {
   tag "$interval_list"
 	container 'broadinstitute/gatk:latest'
-  cpus threads
 
 	input:
   set val(interval_list), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai) from haplotypecaller
@@ -320,9 +320,9 @@ process HaplotypeCaller {
   val(sample) into sample
 
 	script:
+  int mem = (Runtime.getRuntime().totalMemory()) >> 30
 	"""
   gatk HaplotypeCaller \
-    --java-options "-Xmx${task.cpus}G" \
     -R $fasta \
     -O ${sample}.g.vcf \
     -I $bam_bqsr \
@@ -355,4 +355,47 @@ process MergeVCFs {
   --INPUT= input_variant_files.list \
   --OUTPUT= ${name[0]}.g.vcf
 	"""
+}
+
+if (params.multiqc) {
+
+  process bcftools{
+  tag "$vcf"
+
+  container 'lifebitai/bcftools:latest'
+
+  input:
+  set file(vcf),file(index) from mergevcfs
+  output:
+  file("*") into bcftools_multiqc
+
+  script:
+  """
+  bcftools stats $vcf > bcfstats.txt
+  """
+  }
+
+  if (!params.bam) {
+    multiqc = markdup_multiqc.combine(bcftools_multiqc)
+  } else {
+    multiqc = bcftools_multiqc
+  }
+
+  process multiqc {
+  tag "multiqc_report.html"
+
+  publishDir "${params.outdir}/MultiQC", mode: 'copy'
+  container 'ewels/multiqc:v1.7'
+
+  input:
+  file multiqc from multiqc
+  
+  output:
+  file("*") into viz
+
+  script:
+  """
+  multiqc .
+  """
+  }
 }
