@@ -27,6 +27,9 @@ if (params.help) {
 }
 
 int threads = Runtime.getRuntime().availableProcessors()
+int mem = (Runtime.getRuntime().totalMemory()) //>> 30
+int threadmem = mem/threads
+//int threadmem = mem/threads < 1 ? 1 : mem/threads
 
 // Validate inputs
 params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
@@ -310,6 +313,8 @@ process HaplotypeCaller {
   tag "$interval_list"
 	container 'broadinstitute/gatk:latest'
 
+	memory threadmem
+
 	input:
   set val(interval_list), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai) from haplotypecaller
 
@@ -322,7 +327,7 @@ process HaplotypeCaller {
   int mem = (Runtime.getRuntime().totalMemory()) >> 30
 	"""
   gatk HaplotypeCaller \
-    --java-options "-Xss${mem}G" \
+    --java-options "-Xmx${task.memory}M" \
     -R $fasta \
     -O ${sample}.g.vcf \
     -I $bam_bqsr \
