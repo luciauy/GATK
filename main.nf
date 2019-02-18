@@ -301,7 +301,7 @@ process IndexBam {
   script:
   """
   cp $bam bam.bam
-  mv bam.bam ${name}bam
+  mv bam.bam ${name}.bam
   samtools index ${name}.bam
   """
 }
@@ -312,6 +312,7 @@ haplotypecaller = interval_list.combine(haplotypecaller_index)
 process HaplotypeCaller {
   tag "$interval_list"
 	container 'broadinstitute/gatk:latest'
+
 	memory threadmem
 
 	input:
@@ -323,6 +324,7 @@ process HaplotypeCaller {
   val(sample) into sample
 
 	script:
+  int mem = (Runtime.getRuntime().totalMemory()) >> 30
 	"""
   gatk HaplotypeCaller \
     --java-options "-Xmx${task.memory}M" \
