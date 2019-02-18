@@ -324,7 +324,6 @@ process HaplotypeCaller {
   val(sample) into sample
 
 	script:
-  int mem = (Runtime.getRuntime().totalMemory()) >> 30
 	"""
   gatk HaplotypeCaller \
     --java-options "-Xmx${task.memory}M" \
