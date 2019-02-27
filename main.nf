@@ -105,7 +105,7 @@ if (params.intervals) {
            .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.intervals}" }
            .splitText()
            .map { it -> it.trim() as Path }
-           .into { interval_list; intervals; split_intervals }
+           .into { interval_list; intervals }
 }
 if (params.bai) {
     Channel.fromPath(params.bai)
@@ -114,9 +114,10 @@ if (params.bai) {
 }
 
 // set threadmem equal to total memory divided by number of intervals
-count_intervals = split_intervals.count()
-n_intervals = count_intervals.value.toInteger()
-threadmem = (((Runtime.getRuntime().maxMemory() * 4) / n_intervals) as nextflow.util.MemoryUnit)
+n_intervals = 0
+intervals_file = file(params.intervals)
+intervals_file.eachLine { n_intervals++ }
+intmem = (((Runtime.getRuntime().maxMemory() * 4) / n_intervals) as nextflow.util.MemoryUnit)
 
 /*
  * Create a channel for input read files
