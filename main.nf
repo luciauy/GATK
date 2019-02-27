@@ -27,9 +27,7 @@ if (params.help) {
 }
 
 int threads = Runtime.getRuntime().availableProcessors()
-int mem = (Runtime.getRuntime().totalMemory()) //>> 30
-int threadmem = mem/threads
-//int threadmem = mem/threads < 1 ? 1 : mem/threads
+threadmem = (((Runtime.getRuntime().maxMemory() * 4) / threads) as nextflow.util.MemoryUnit)
 
 // Validate inputs
 params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
@@ -111,6 +109,11 @@ if (params.intervals) {
            .splitText()
            .map { it -> it.trim() as Path }
            .into { interval_list; intervals }
+}
+if (params.bai) {
+    Channel.fromPath(params.bai)
+           .ifEmpty { exit 1, "BAM index file not found: ${params.bai}" }
+           .set { bai }
 }
 
 
@@ -287,7 +290,8 @@ process ApplyBQSR {
 }
 }
 
-process IndexBam {
+if (!params.bai){
+  process IndexBam {
   tag "$bam"
   publishDir "${params.outdir}/Bam", mode: 'copy'
   container 'lifebitai/samtools:latest'
@@ -304,6 +308,9 @@ process IndexBam {
   mv bam.bam ${name}.bam
   samtools index ${name}.bam
   """
+  } 
+} else {
+  indexed_bam_bqsr = bam_bqsr.merge(bai)
 }
 
 haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, indexed_bam_bqsr)
@@ -326,7 +333,7 @@ process HaplotypeCaller {
 	script:
 	"""
   gatk HaplotypeCaller \
-    --java-options "-Xmx${task.memory}M" \
+    --java-options "-Xms${task.memory.toMega()}M -Xmx${task.memory.toMega()}M" \
     -R $fasta \
     -O ${sample}.g.vcf \
     -I $bam_bqsr \
