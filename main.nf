@@ -113,7 +113,7 @@ if (params.bai) {
            .set { bai }
 }
 
-// set threadmem equal to total memory divided by number of intervals
+// set intmem equal to total memory divided by number of intervals
 n_intervals = 0
 intervals_file = file(params.intervals)
 intervals_file.eachLine { n_intervals++ }
@@ -322,7 +322,7 @@ process HaplotypeCaller {
   tag "$interval_list"
 	container 'broadinstitute/gatk:latest'
 
-	memory threadmem
+	memory intmem
 
 	input:
   set val(interval_list), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai) from haplotypecaller
