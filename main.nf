@@ -104,7 +104,7 @@ if (params.intervals) {
     Channel.fromPath(params.intervals)
            .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.intervals}" }
            .splitText()
-           .map { it -> it.trim() as Path }
+           .map { it -> it.trim() }
            .into { interval_list; intervals }
 }
 if (params.bai) {
@@ -113,11 +113,9 @@ if (params.bai) {
            .set { bai }
 }
 
-// set intmem equal to total memory divided by number of intervals
-n_intervals = 0
-intervals_file = file(params.intervals)
-intervals_file.eachLine { n_intervals++ }
-intmem = (((Runtime.getRuntime().maxMemory() * 4) / n_intervals) as nextflow.util.MemoryUnit)
+// set threadmem equal to total memory divided by number of threads
+int threads = Runtime.getRuntime().availableProcessors()
+threadmem = (((Runtime.getRuntime().maxMemory() * 4) / threads) as nextflow.util.MemoryUnit)
 
 /*
  * Create a channel for input read files
@@ -322,7 +320,7 @@ process HaplotypeCaller {
   tag "$interval_list"
 	container 'broadinstitute/gatk:latest'
 
-	memory intmem
+	memory threadmem
 
 	input:
   set val(interval_list), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai) from haplotypecaller
@@ -335,7 +333,7 @@ process HaplotypeCaller {
 	script:
 	"""
   gatk HaplotypeCaller \
-    --java-options "-Xms${task.memory.toMega()}M -Xmx${task.memory.toMega()}M" \
+    --java-options -Xmx${task.memory.toMega()}M \
     -R $fasta \
     -O ${sample}.g.vcf \
     -I $bam_bqsr \
