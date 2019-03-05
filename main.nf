@@ -241,6 +241,7 @@ process MarkDuplicates {
 
 	output:
 	set val(name), file("${name}_MarkDup.bam") into bam_markdup_baserecalibrator, bam_markdup_applybqsr
+  file "metrics.txt" into markdup_multiqc
 
 	"""
 	gatk MarkDuplicates -I $bam_sort -M metrics.txt -O ${name}_MarkDup.bam
@@ -331,6 +332,7 @@ process HaplotypeCaller {
   val(sample) into sample
 
 	script:
+  int mem = (Runtime.getRuntime().totalMemory()) >> 30
 	"""
   gatk HaplotypeCaller \
     --java-options -Xmx${task.memory.toMega()}M \
@@ -366,4 +368,48 @@ process MergeVCFs {
   --INPUT= input_variant_files.list \
   --OUTPUT= ${name[0]}.g.vcf
 	"""
+}
+}
+
+if (params.multiqc) {
+
+  process bcftools{
+  tag "$vcf"
+
+  container 'lifebitai/bcftools:latest'
+
+  input:
+  set file(vcf),file(index) from mergevcfs
+  output:
+  file("*") into bcftools_multiqc
+
+  script:
+  """
+  bcftools stats $vcf > bcfstats.txt
+  """
+  }
+
+  if (!params.bam) {
+    multiqc = markdup_multiqc.combine(bcftools_multiqc)
+  } else {
+    multiqc = bcftools_multiqc
+  }
+
+  process multiqc {
+  tag "multiqc_report.html"
+
+  publishDir "${params.outdir}/MultiQC", mode: 'copy'
+  container 'ewels/multiqc:v1.7'
+
+  input:
+  file multiqc from multiqc
+  
+  output:
+  file("*") into viz
+
+  script:
+  """
+  multiqc .
+  """
+  }
 }
