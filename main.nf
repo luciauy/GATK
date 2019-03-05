@@ -370,9 +370,8 @@ process MergeVCFs {
 	"""
 }
 
-if (params.multiqc) {
 
-  process bcftools{
+process bcftools{
   tag "$vcf"
 
   container 'lifebitai/bcftools:latest'
@@ -382,19 +381,21 @@ if (params.multiqc) {
   output:
   file("*") into bcftools_multiqc
 
+  when: !params.skip_multiqc
+
   script:
   """
   bcftools stats $vcf > bcfstats.txt
   """
-  }
+}
 
-  if (!params.bam) {
-    multiqc = markdup_multiqc.combine(bcftools_multiqc)
-  } else {
-    multiqc = bcftools_multiqc
-  }
+if (!params.bam) {
+  multiqc = markdup_multiqc.combine(bcftools_multiqc)
+} else {
+  multiqc = bcftools_multiqc
+}
 
-  process multiqc {
+process multiqc {
   tag "multiqc_report.html"
 
   publishDir "${params.outdir}/MultiQC", mode: 'copy'
@@ -402,13 +403,14 @@ if (params.multiqc) {
 
   input:
   file multiqc from multiqc
-  
+
   output:
   file("*") into viz
+
+  when: !params.skip_multiqc
 
   script:
   """
   multiqc .
   """
-  }
 }
