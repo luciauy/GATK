@@ -128,7 +128,7 @@ if (params.reads) {
       .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
       .combine(fasta_bwa)
       .dump(tag:'input')
-      .into { reads_samplename; reads_bwa }
+      .into { reads_fastqc; reads_bwa }
   } else if (params.reads_folder){
     reads="${params.reads_folder}/${params.reads_prefix}_{1,2}.${params.reads_extension}"
     Channel
@@ -136,7 +136,7 @@ if (params.reads) {
         .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
         .combine(fasta_bwa)
         .dump(tag:'input')
-        .into { reads_samplename; reads_bwa }
+        .into { reads_fastqc; reads_bwa }
   } else if (params.bam) {
   Channel.fromPath(params.bam)
          .map { file -> tuple(file.baseName, file) }
@@ -144,6 +144,26 @@ if (params.reads) {
          .set { bam_bqsr }
 } else {
   exit 1, "Please specify either --reads singleEnd.fastq, --reads_folder pairedReads or --bam myfile.bam"
+}
+
+if (!params.skip_fastqc && params.reads) {
+  process fastqc {
+  tag "$name"
+  publishDir "${params.outdir}/fastqc", mode: 'copy',
+      saveAs: {filename -> filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename"}
+  container 'lifebitai/fastqc'
+
+  input:
+  set val(name), file(reads) from reads_fastqc
+
+  output:
+  file "*_fastqc.{zip,html}" into fastqc_results
+
+  script:
+  """
+  fastqc -q $reads
+  """
+  }
 }
 
 if (!params.bam) {
@@ -261,6 +281,7 @@ process BaseRecalibrator {
 
 	output:
 	set val(name), file("${name}_recal_data.table") into baserecalibrator_table
+  file ("*data.table") into baseRecalibratorReport
 
 	"""
 	gatk BaseRecalibrator \
@@ -390,7 +411,9 @@ process bcftools{
 }
 
 if (!params.bam) {
-  multiqc = markdup_multiqc.combine(bcftools_multiqc)
+  fastqc_multiqc = fastqc_results.collect().ifEmpty([])
+  multiqc_alignment = markdup_multiqc.merge(fastqc_multiqc, baseRecalibratorReport)
+  multiqc = bcftools_multiqc.combine(multiqc_alignment)
 } else {
   multiqc = bcftools_multiqc
 }
@@ -411,6 +434,6 @@ process multiqc {
 
   script:
   """
-  multiqc .
+  multiqc . -m fastqc -m picard -m gatk -m bcftools
   """
 }
