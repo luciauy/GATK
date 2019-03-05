@@ -369,7 +369,6 @@ process MergeVCFs {
   --OUTPUT= ${name[0]}.g.vcf
 	"""
 }
-}
 
 if (params.multiqc) {
 
