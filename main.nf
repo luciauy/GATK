@@ -26,8 +26,6 @@ if (params.help) {
   exit 1
 }
 
-int threads = Runtime.getRuntime().availableProcessors()
-
 // Validate inputs
 params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
 if (params.fasta) {
@@ -106,10 +104,18 @@ if (params.intervals) {
     Channel.fromPath(params.intervals)
            .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.intervals}" }
            .splitText()
-           .map { it -> it.trim() as Path }
+           .map { it -> it.trim() }
            .into { interval_list; intervals }
 }
+if (params.bai) {
+    Channel.fromPath(params.bai)
+           .ifEmpty { exit 1, "BAM index file not found: ${params.bai}" }
+           .set { bai }
+}
 
+// set threadmem equal to total memory divided by number of threads
+int threads = Runtime.getRuntime().availableProcessors()
+threadmem = (((Runtime.getRuntime().maxMemory() * 4) / threads) as nextflow.util.MemoryUnit)
 
 /*
  * Create a channel for input read files
@@ -285,7 +291,8 @@ process ApplyBQSR {
 }
 }
 
-process IndexBam {
+if (!params.bai){
+  process IndexBam {
   tag "$bam"
   publishDir "${params.outdir}/Bam", mode: 'copy'
   container 'lifebitai/samtools:latest'
@@ -302,6 +309,9 @@ process IndexBam {
   mv bam.bam ${name}.bam
   samtools index ${name}.bam
   """
+  }
+} else {
+  indexed_bam_bqsr = bam_bqsr.merge(bai)
 }
 
 haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, indexed_bam_bqsr)
@@ -310,6 +320,8 @@ haplotypecaller = interval_list.combine(haplotypecaller_index)
 process HaplotypeCaller {
   tag "$interval_list"
 	container 'broadinstitute/gatk:latest'
+
+	memory threadmem
 
 	input:
   set val(interval_list), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai) from haplotypecaller
@@ -323,6 +335,7 @@ process HaplotypeCaller {
   int mem = (Runtime.getRuntime().totalMemory()) >> 30
 	"""
   gatk HaplotypeCaller \
+    --java-options -Xmx${task.memory.toMega()}M \
     -R $fasta \
     -O ${sample}.g.vcf \
     -I $bam_bqsr \
@@ -355,6 +368,7 @@ process MergeVCFs {
   --INPUT= input_variant_files.list \
   --OUTPUT= ${name[0]}.g.vcf
 	"""
+}
 }
 
 if (params.multiqc) {
