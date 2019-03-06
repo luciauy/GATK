@@ -126,18 +126,22 @@ if (params.reads) {
       .fromPath(params.reads)
       .map { file -> tuple(file.baseName, file) }
       .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
-      .combine(fasta_bwa)
-      .dump(tag:'input')
-      .into { reads_fastqc; reads_bwa }
-  } else if (params.reads_folder){
-    reads="${params.reads_folder}/${params.reads_prefix}_{1,2}.${params.reads_extension}"
-    Channel
-        .fromFilePairs(reads, size: 2)
-        .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
-        .combine(fasta_bwa)
-        .dump(tag:'input')
-        .into { reads_fastqc; reads_bwa }
-  } else if (params.bam) {
+      .into { reads_fastqc; reads_files }
+  reads_files
+    .combine(fasta_bwa)
+    .dump(tag:'input')
+    .set { reads_bwa }
+} else if (params.reads_folder){
+  reads="${params.reads_folder}/${params.reads_prefix}_{1,2}.${params.reads_extension}"
+  Channel
+      .fromFilePairs(reads, size: 2)
+      .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
+      .into { reads_fastqc; reads_files}
+  reads_files
+    .combine(fasta_bwa)
+    .dump(tag:'input')
+    .set { reads_bwa }
+} else if (params.bam) {
   Channel.fromPath(params.bam)
          .map { file -> tuple(file.baseName, file) }
          .ifEmpty { exit 1, "BAM file not found: ${params.bam}" }
@@ -146,7 +150,7 @@ if (params.reads) {
   exit 1, "Please specify either --reads singleEnd.fastq, --reads_folder pairedReads or --bam myfile.bam"
 }
 
-if (!params.skip_fastqc && params.reads) {
+if (!params.skip_fastqc && (params.reads || params.reads_folder)) {
   process fastqc {
   tag "$name"
   publishDir "${params.outdir}/fastqc", mode: 'copy',
@@ -238,18 +242,46 @@ process BWA {
 
 process BWA_sort {
   tag "$sam"
-	container 'comics/samtools:latest'
+	container 'lifebitai/samtools:latest'
 
 	input:
   set val(name), file(sam) from sam
 
 	output:
-	set val(name), file("${name}-sorted.bam") into bam_sort
+	set val(name), file("${name}-sorted.bam") into bam_sort, bam_sort_qc
 
 	"""
 	samtools sort -o ${name}-sorted.bam -O BAM $sam
 	"""
 
+}
+
+process RunBamQCmapped {
+    tag "$bam"
+    container 'maxulysse/sarek:latest'
+
+    input:
+    set val(name), file(bam) from bam_sort_qc
+
+    output:
+    file("${name}") into bamQCmappedReport
+
+    when: !params.skip_multiqc
+
+    script:
+    // TODO: add --java-mem-size=${task.memory.toGiga()}G
+    """
+    qualimap \
+    bamqc \
+    -bam ${bam} \
+    --paint-chromosome-limits \
+    --genome-gc-distr HUMAN \
+    -nt ${task.cpus} \
+    -skip-duplicated \
+    --skip-dup-mode 0 \
+    -outdir ${name} \
+    -outformat HTML
+    """
 }
 
 process MarkDuplicates {
@@ -322,7 +354,7 @@ if (!params.bai){
   set val(name), file(bam) from bam_bqsr
 
   output:
-  set val(name), file("${name}.bam"), file("${name}.bam.bai") into indexed_bam_bqsr
+  set val(name), file("${name}.bam"), file("${name}.bam.bai") into indexed_bam_bqsr, indexed_bam_qc
 
   script:
   """
@@ -332,7 +364,35 @@ if (!params.bai){
   """
   }
 } else {
-  indexed_bam_bqsr = bam_bqsr.merge(bai)
+  bam_bqsr.merge(bai).into { indexed_bam_bqsr; indexed_bam_qc }
+}
+
+process RunBamQCrecalibrated {
+    tag "$bam"
+    container 'maxulysse/sarek:latest'
+
+    input:
+    set val(name), file(bam), file(bai) from indexed_bam_qc
+
+    output:
+    file("${name}_recalibrated") into bamQCrecalibratedReport
+
+    when: !params.skip_multiqc
+
+    script:
+    // TODO: add --java-mem-size=${task.memory.toGiga()}G \
+    """
+    qualimap \
+    bamqc \
+    -bam ${bam} \
+    --paint-chromosome-limits \
+    --genome-gc-distr HUMAN \
+    -nt ${task.cpus} \
+    -skip-duplicated \
+    --skip-dup-mode 0 \
+    -outdir ${name}_recalibrated \
+    -outformat HTML
+    """
 }
 
 haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, indexed_bam_bqsr)
@@ -435,14 +495,13 @@ process VariantEval {
     """
 }
 
-if (!params.skip_multiqc) {
-  if (!params.bam) {
-    fastqc_multiqc = fastqc_results.collect().ifEmpty([])
-    multiqc_data = markdup_multiqc.merge(fastqc_multiqc, baseRecalibratorReport, variantEvalReport)
-    multiqc = bcftools_multiqc.combine(multiqc_data)
-  } else {
-    multiqc = bcftools_multiqc.combine(variantEvalReport)
-  }
+// skip_fastqc/multiqc?
+if (!params.bam) {
+  fastqc_multiqc = fastqc_results.collect().ifEmpty([])
+  multiqc_data = markdup_multiqc.merge(fastqc_multiqc, baseRecalibratorReport, variantEvalReport, bamQCmappedReport, bamQCrecalibratedReport)
+  multiqc = bcftools_multiqc.combine(multiqc_data)
+} else {
+  multiqc = bcftools_multiqc.combine(variantEvalReport.merge(bamQCrecalibratedReport))
 }
 
 process multiqc {
@@ -461,6 +520,6 @@ process multiqc {
 
   script:
   """
-  multiqc . -m fastqc -m picard -m gatk -m bcftools
+  multiqc . -m fastqc -m qualimap -m picard -m gatk -m bcftools
   """
 }
