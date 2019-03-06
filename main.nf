@@ -31,19 +31,19 @@ params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : 
 if (params.fasta) {
     Channel.fromPath(params.fasta)
            .ifEmpty { exit 1, "fasta annotation file not found: ${params.fasta}" }
-           .into { fasta_bwa; fasta_baserecalibrator; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches }
+           .into { fasta_bwa; fasta_baserecalibrator; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches; fasta_variant_eval }
 }
 params.fai = params.genome ? params.genomes[ params.genome ].fai ?: false : false
 if (params.fai) {
     Channel.fromPath(params.fai)
            .ifEmpty { exit 1, "fai annotation file not found: ${params.fai}" }
-           .into { fai_bwa; fai_baserecalibrator; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches }
+           .into { fai_bwa; fai_baserecalibrator; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches; fai_variant_eval }
 }
 params.dict = params.genome ? params.genomes[ params.genome ].dict ?: false : false
 if (params.dict) {
     Channel.fromPath(params.dict)
            .ifEmpty { exit 1, "dict annotation file not found: ${params.dict}" }
-           .into { dict_bwa; dict_baserecalibrator; dict_haplotypecaller; dict_genotypegvcfs; dict_variantrecalibrator_snps; dict_variantrecalibrator_tranches }
+           .into { dict_bwa; dict_baserecalibrator; dict_haplotypecaller; dict_genotypegvcfs; dict_variantrecalibrator_snps; dict_variantrecalibrator_tranches; dict_variant_eval }
 }
 params.dbsnp_gz = params.genome ? params.genomes[ params.genome ].dbsnp_gz ?: false : false
 if (params.dbsnp_gz) {
@@ -376,7 +376,7 @@ process MergeVCFs {
   val name from sample.collect()
 
 	output:
-	set file("${name[0]}.g.vcf"), file("${name[0]}.g.vcf.idx") into mergevcfs
+	set val("${name[0]}"), file("${name[0]}.g.vcf"), file("${name[0]}.g.vcf.idx") into vcf_bcftools, vcf_variant_eval
 
 	script:
 	"""
@@ -391,14 +391,13 @@ process MergeVCFs {
 	"""
 }
 
-
 process bcftools{
   tag "$vcf"
 
   container 'lifebitai/bcftools:latest'
 
   input:
-  set file(vcf),file(index) from mergevcfs
+  set val(name), file(vcf), file(index) from vcf_bcftools
   output:
   file("*") into bcftools_multiqc
 
@@ -410,12 +409,40 @@ process bcftools{
   """
 }
 
-if (!params.bam) {
-  fastqc_multiqc = fastqc_results.collect().ifEmpty([])
-  multiqc_alignment = markdup_multiqc.merge(fastqc_multiqc, baseRecalibratorReport)
-  multiqc = bcftools_multiqc.combine(multiqc_alignment)
-} else {
-  multiqc = bcftools_multiqc
+variant_eval_ref = fasta_variant_eval.merge(fai_variant_eval, dict_variant_eval)
+variant_eval = vcf_variant_eval.combine(variant_eval_ref)
+
+process VariantEval {
+    tag "$vcf"
+    container 'broadinstitute/gatk:latest'
+
+    input:
+    set val(name), file(vcf), file(index), file(fasta), file(fai), file(dict) from variant_eval
+
+    output:
+    file("${name}.eval.grp") into variantEvalReport
+
+    when: !params.skip_multiqc
+
+    script:
+    // TODO: add dbsnp & gold standard
+    """
+    touch ${name}.eval.grp
+    gatk VariantEval \
+    -R ${fasta} \
+    --eval:${name} $vcf \
+    -O ${name}.eval.grp
+    """
+}
+
+if (!params.skip_multiqc) {
+  if (!params.bam) {
+    fastqc_multiqc = fastqc_results.collect().ifEmpty([])
+    multiqc_data = markdup_multiqc.merge(fastqc_multiqc, baseRecalibratorReport, variantEvalReport)
+    multiqc = bcftools_multiqc.combine(multiqc_data)
+  } else {
+    multiqc = bcftools_multiqc.combine(variantEvalReport)
+  }
 }
 
 process multiqc {
