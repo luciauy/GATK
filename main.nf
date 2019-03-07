@@ -25,8 +25,15 @@ if (params.help) {
   log.info "===================================================================="
   exit 1
 }
+genome_name="hg19"
 log.info "Genome assembly selected: ${params.genome}"
-log.info "Genome dictionary is: ${params.genomes}"
+log.info "Entire Genome dictionary is: ${params.genomes}"
+log.info "Genome dictionary for hg19 variable: ${params.genomes[genome_name]}"
+log.info "Genome dictionary for hg19: ${params.genomes['hg19']}"
+log.info "Genome dictionary from parameter: ${params.genomes[params.genome]}"
+log.info "Fasta Genome dictionary from parameter: ${params.genomes[genome_name].fasta}"
+log.info "Fasta Genome dictionary from parameter: ${params.genomes['hg19'].fasta}"
+log.info "Fasta Genome dictionary from parameter: ${params.genomes[params.genome].fasta}"
 
 // Validate inputs
 params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
