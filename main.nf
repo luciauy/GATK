@@ -26,29 +26,24 @@ if (params.help) {
   exit 1
 }
 
-int threads = Runtime.getRuntime().availableProcessors()
-int mem = (Runtime.getRuntime().totalMemory()) //>> 30
-int threadmem = mem/threads
-//int threadmem = mem/threads < 1 ? 1 : mem/threads
-
 // Validate inputs
 params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
 if (params.fasta) {
     Channel.fromPath(params.fasta)
            .ifEmpty { exit 1, "fasta annotation file not found: ${params.fasta}" }
-           .into { fasta_bwa; fasta_baserecalibrator; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches }
+           .into { fasta_bwa; fasta_baserecalibrator; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches; fasta_variant_eval }
 }
 params.fai = params.genome ? params.genomes[ params.genome ].fai ?: false : false
 if (params.fai) {
     Channel.fromPath(params.fai)
            .ifEmpty { exit 1, "fai annotation file not found: ${params.fai}" }
-           .into { fai_bwa; fai_baserecalibrator; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches }
+           .into { fai_bwa; fai_baserecalibrator; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches; fai_variant_eval }
 }
 params.dict = params.genome ? params.genomes[ params.genome ].dict ?: false : false
 if (params.dict) {
     Channel.fromPath(params.dict)
            .ifEmpty { exit 1, "dict annotation file not found: ${params.dict}" }
-           .into { dict_bwa; dict_baserecalibrator; dict_haplotypecaller; dict_genotypegvcfs; dict_variantrecalibrator_snps; dict_variantrecalibrator_tranches }
+           .into { dict_bwa; dict_baserecalibrator; dict_haplotypecaller; dict_genotypegvcfs; dict_variantrecalibrator_snps; dict_variantrecalibrator_tranches; dict_variant_eval }
 }
 params.dbsnp_gz = params.genome ? params.genomes[ params.genome ].dbsnp_gz ?: false : false
 if (params.dbsnp_gz) {
@@ -109,10 +104,18 @@ if (params.intervals) {
     Channel.fromPath(params.intervals)
            .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.intervals}" }
            .splitText()
-           .map { it -> it.trim() as Path }
+           .map { it -> it.trim() }
            .into { interval_list; intervals }
 }
+if (params.bai) {
+    Channel.fromPath(params.bai)
+           .ifEmpty { exit 1, "BAM index file not found: ${params.bai}" }
+           .set { bai }
+}
 
+// set threadmem equal to total memory divided by number of threads
+int threads = Runtime.getRuntime().availableProcessors()
+threadmem = (((Runtime.getRuntime().maxMemory() * 4) / threads) as nextflow.util.MemoryUnit)
 
 /*
  * Create a channel for input read files
@@ -123,24 +126,48 @@ if (params.reads) {
       .fromPath(params.reads)
       .map { file -> tuple(file.baseName, file) }
       .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
-      .combine(fasta_bwa)
-      .dump(tag:'input')
-      .into { reads_samplename; reads_bwa }
-  } else if (params.reads_folder){
-    reads="${params.reads_folder}/${params.reads_prefix}_{1,2}.${params.reads_extension}"
-    Channel
-        .fromFilePairs(reads, size: 2)
-        .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
-        .combine(fasta_bwa)
-        .dump(tag:'input')
-        .into { reads_samplename; reads_bwa }
-  } else if (params.bam) {
+      .into { reads_fastqc; reads_files }
+  reads_files
+    .combine(fasta_bwa)
+    .dump(tag:'input')
+    .set { reads_bwa }
+} else if (params.reads_folder){
+  reads="${params.reads_folder}/${params.reads_prefix}_{1,2}.${params.reads_extension}"
+  Channel
+      .fromFilePairs(reads, size: 2)
+      .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
+      .into { reads_fastqc; reads_files}
+  reads_files
+    .combine(fasta_bwa)
+    .dump(tag:'input')
+    .set { reads_bwa }
+} else if (params.bam) {
   Channel.fromPath(params.bam)
          .map { file -> tuple(file.baseName, file) }
          .ifEmpty { exit 1, "BAM file not found: ${params.bam}" }
          .set { bam_bqsr }
 } else {
   exit 1, "Please specify either --reads singleEnd.fastq, --reads_folder pairedReads or --bam myfile.bam"
+}
+
+if (!params.skip_fastqc && (params.reads || params.reads_folder)) {
+  process fastqc {
+  tag "$name"
+  publishDir "${params.outdir}/fastqc", mode: 'copy',
+      saveAs: {filename -> filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename"}
+  container 'lifebitai/fastqc'
+
+  input:
+  set val(name), file(reads) from reads_fastqc
+
+  output:
+  file "*_fastqc.{zip,html}" into fastqc_results
+
+  script:
+  """
+  fastqc -q $reads
+  """
+  }
 }
 
 if (!params.bam) {
@@ -215,18 +242,46 @@ process BWA {
 
 process BWA_sort {
   tag "$sam"
-	container 'comics/samtools:latest'
+	container 'lifebitai/samtools:latest'
 
 	input:
   set val(name), file(sam) from sam
 
 	output:
-	set val(name), file("${name}-sorted.bam") into bam_sort
+	set val(name), file("${name}-sorted.bam") into bam_sort, bam_sort_qc
 
 	"""
 	samtools sort -o ${name}-sorted.bam -O BAM $sam
 	"""
 
+}
+
+process RunBamQCmapped {
+    tag "$bam"
+    container 'maxulysse/sarek:latest'
+
+    input:
+    set val(name), file(bam) from bam_sort_qc
+
+    output:
+    file("${name}") into bamQCmappedReport
+
+    when: !params.skip_multiqc
+
+    script:
+    // TODO: add --java-mem-size=${task.memory.toGiga()}G
+    """
+    qualimap \
+    bamqc \
+    -bam ${bam} \
+    --paint-chromosome-limits \
+    --genome-gc-distr HUMAN \
+    -nt ${task.cpus} \
+    -skip-duplicated \
+    --skip-dup-mode 0 \
+    -outdir ${name} \
+    -outformat HTML
+    """
 }
 
 process MarkDuplicates {
@@ -238,6 +293,7 @@ process MarkDuplicates {
 
 	output:
 	set val(name), file("${name}_MarkDup.bam") into bam_markdup_baserecalibrator, bam_markdup_applybqsr
+  file "metrics.txt" into markdup_multiqc
 
 	"""
 	gatk MarkDuplicates -I $bam_sort -M metrics.txt -O ${name}_MarkDup.bam
@@ -257,6 +313,7 @@ process BaseRecalibrator {
 
 	output:
 	set val(name), file("${name}_recal_data.table") into baserecalibrator_table
+  file ("*data.table") into baseRecalibratorReport
 
 	"""
 	gatk BaseRecalibrator \
@@ -287,7 +344,8 @@ process ApplyBQSR {
 }
 }
 
-process IndexBam {
+if (!params.bai){
+  process IndexBam {
   tag "$bam"
   publishDir "${params.outdir}/Bam", mode: 'copy'
   container 'lifebitai/samtools:latest'
@@ -296,7 +354,7 @@ process IndexBam {
   set val(name), file(bam) from bam_bqsr
 
   output:
-  set val(name), file("${name}.bam"), file("${name}.bam.bai") into indexed_bam_bqsr
+  set val(name), file("${name}.bam"), file("${name}.bam.bai") into indexed_bam_bqsr, indexed_bam_qc
 
   script:
   """
@@ -304,6 +362,37 @@ process IndexBam {
   mv bam.bam ${name}.bam
   samtools index ${name}.bam
   """
+  }
+} else {
+  bam_bqsr.merge(bai).into { indexed_bam_bqsr; indexed_bam_qc }
+}
+
+process RunBamQCrecalibrated {
+    tag "$bam"
+    container 'maxulysse/sarek:latest'
+
+    input:
+    set val(name), file(bam), file(bai) from indexed_bam_qc
+
+    output:
+    file("${name}_recalibrated") into bamQCrecalibratedReport
+
+    when: !params.skip_multiqc
+
+    script:
+    // TODO: add --java-mem-size=${task.memory.toGiga()}G \
+    """
+    qualimap \
+    bamqc \
+    -bam ${bam} \
+    --paint-chromosome-limits \
+    --genome-gc-distr HUMAN \
+    -nt ${task.cpus} \
+    -skip-duplicated \
+    --skip-dup-mode 0 \
+    -outdir ${name}_recalibrated \
+    -outformat HTML
+    """
 }
 
 haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, indexed_bam_bqsr)
@@ -327,7 +416,7 @@ process HaplotypeCaller {
   int mem = (Runtime.getRuntime().totalMemory()) >> 30
 	"""
   gatk HaplotypeCaller \
-    --java-options "-Xmx${task.memory}M" \
+    --java-options -Xmx${task.memory.toMega()}M \
     -R $fasta \
     -O ${sample}.g.vcf \
     -I $bam_bqsr \
@@ -347,7 +436,7 @@ process MergeVCFs {
   val name from sample.collect()
 
 	output:
-	set file("${name[0]}.g.vcf"), file("${name[0]}.g.vcf.idx") into mergevcfs
+	set val("${name[0]}"), file("${name[0]}.g.vcf"), file("${name[0]}.g.vcf.idx") into vcf_bcftools, vcf_variant_eval
 
 	script:
 	"""
@@ -360,4 +449,77 @@ process MergeVCFs {
   --INPUT= input_variant_files.list \
   --OUTPUT= ${name[0]}.g.vcf
 	"""
+}
+
+process bcftools{
+  tag "$vcf"
+
+  container 'lifebitai/bcftools:latest'
+
+  input:
+  set val(name), file(vcf), file(index) from vcf_bcftools
+  output:
+  file("*") into bcftools_multiqc
+
+  when: !params.skip_multiqc
+
+  script:
+  """
+  bcftools stats $vcf > bcfstats.txt
+  """
+}
+
+variant_eval_ref = fasta_variant_eval.merge(fai_variant_eval, dict_variant_eval)
+variant_eval = vcf_variant_eval.combine(variant_eval_ref)
+
+process VariantEval {
+    tag "$vcf"
+    container 'broadinstitute/gatk:latest'
+
+    input:
+    set val(name), file(vcf), file(index), file(fasta), file(fai), file(dict) from variant_eval
+
+    output:
+    file("${name}.eval.grp") into variantEvalReport
+
+    when: !params.skip_multiqc
+
+    script:
+    // TODO: add dbsnp & gold standard
+    """
+    touch ${name}.eval.grp
+    gatk VariantEval \
+    -R ${fasta} \
+    --eval:${name} $vcf \
+    -O ${name}.eval.grp
+    """
+}
+
+// skip_fastqc/multiqc?
+if (!params.bam) {
+  fastqc_multiqc = fastqc_results.collect().ifEmpty([])
+  multiqc_data = markdup_multiqc.merge(fastqc_multiqc, baseRecalibratorReport, variantEvalReport, bamQCmappedReport, bamQCrecalibratedReport)
+  multiqc = bcftools_multiqc.combine(multiqc_data)
+} else {
+  multiqc = bcftools_multiqc.combine(variantEvalReport.merge(bamQCrecalibratedReport))
+}
+
+process multiqc {
+  tag "multiqc_report.html"
+
+  publishDir "${params.outdir}/MultiQC", mode: 'copy'
+  container 'ewels/multiqc:v1.7'
+
+  input:
+  file multiqc from multiqc
+
+  output:
+  file("*") into viz
+
+  when: !params.skip_multiqc
+
+  script:
+  """
+  multiqc . -m fastqc -m qualimap -m picard -m gatk -m bcftools
+  """
 }
