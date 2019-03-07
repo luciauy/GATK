@@ -103,6 +103,9 @@ if (params.bwa_index_sa) {
 if (params.intervals) {
     Channel.fromPath(params.intervals)
            .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.intervals}" }
+           .into { interval_file; split_intervals}
+    
+    split_intervals
            .splitText()
            .map { it -> it.trim() }
            .into { interval_list; intervals }
@@ -395,7 +398,7 @@ process RunBamQCrecalibrated {
     """
 }
 
-haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, indexed_bam_bqsr)
+haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, indexed_bam_bqsr, interval_file)
 haplotypecaller = interval_list.combine(haplotypecaller_index)
 
 process HaplotypeCaller {
@@ -405,7 +408,7 @@ process HaplotypeCaller {
 	memory threadmem
 
 	input:
-  set val(interval_list), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai) from haplotypecaller
+  set val(interval_list), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai), file(interval_file) from haplotypecaller
 
 	output:
 	file("${sample}.g.vcf") into haplotypecaller_gvcf
@@ -421,7 +424,14 @@ process HaplotypeCaller {
     -O ${sample}.g.vcf \
     -I $bam_bqsr \
     -ERC GVCF \
-    -L $interval_list
+    -L $interval_list \
+    -isr INTERSECTION \
+    --native-pair-hmm-threads 1 \
+    -ip 100 \
+    --max-alternate-alleles 3 \
+    -contamination 0 \
+    -L $interval_file \
+    --QUIET
 	"""
 }
 
