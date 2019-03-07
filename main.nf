@@ -26,6 +26,7 @@ if (params.help) {
   exit 1
 }
 log.info "Genome assembly selected: ${params.genome}"
+log.info "Genome dictionary is: ${params.genomes[ params.genome ]}"
 
 // Validate inputs
 params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
