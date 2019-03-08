@@ -25,7 +25,6 @@ if (params.help) {
   log.info "===================================================================="
   exit 1
 }
-
 // Validate inputs
 params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
 if (params.fasta) {
@@ -153,27 +152,29 @@ if (params.reads) {
   exit 1, "Please specify either --reads singleEnd.fastq, --reads_folder pairedReads or --bam myfile.bam"
 }
 
-if (!params.skip_fastqc && (params.reads || params.reads_folder)) {
-  process fastqc {
-  tag "$name"
-  publishDir "${params.outdir}/fastqc", mode: 'copy',
-      saveAs: {filename -> filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename"}
-  container 'lifebitai/fastqc'
-
-  input:
-  set val(name), file(reads) from reads_fastqc
-
-  output:
-  file "*_fastqc.{zip,html}" into fastqc_results
-
-  script:
-  """
-  fastqc -q $reads
-  """
-  }
-}
 
 if (!params.bam) {
+  
+  process fastqc {
+    tag "$name"
+    publishDir "${params.outdir}/fastqc", mode: 'copy',
+        saveAs: {filename -> filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename"}
+    container 'lifebitai/fastqc'
+
+    input:
+    set val(name), file(reads) from reads_fastqc
+
+    output:
+    file "*_fastqc.{zip,html}" into fastqc_results
+
+    when: !params.skip_fastqc
+
+    script:
+    """
+    fastqc -q $reads
+    """
+  }
+  
   process gunzip_dbsnp {
     tag "$dbsnp_gz"
 
@@ -505,31 +506,34 @@ process VariantEval {
     """
 }
 
-// skip_fastqc/multiqc?
-if (!params.bam) {
-  fastqc_multiqc = fastqc_results.collect().ifEmpty([])
-  multiqc_data = markdup_multiqc.merge(fastqc_multiqc, baseRecalibratorReport, variantEvalReport, bamQCmappedReport, bamQCrecalibratedReport)
-  multiqc = bcftools_multiqc.combine(multiqc_data)
-} else {
-  multiqc = bcftools_multiqc.combine(variantEvalReport.merge(bamQCrecalibratedReport))
-}
 
-process multiqc {
-  tag "multiqc_report.html"
+if (!params.skip_fastqc && !params.skip_multiqc) {
 
-  publishDir "${params.outdir}/MultiQC", mode: 'copy'
-  container 'ewels/multiqc:v1.7'
+  if (!params.bam) {
+      fastqc_multiqc = fastqc_results.collect().ifEmpty([])
+      multiqc_data = markdup_multiqc.merge(fastqc_multiqc, baseRecalibratorReport, variantEvalReport, bamQCmappedReport, bamQCrecalibratedReport)
+      multiqc = bcftools_multiqc.combine(multiqc_data)
+  } else {
+    multiqc = bcftools_multiqc.combine(variantEvalReport.merge(bamQCrecalibratedReport))
+  }
 
-  input:
-  file multiqc from multiqc
+  process multiqc {
+    tag "multiqc_report.html"
 
-  output:
-  file("*") into viz
+    publishDir "${params.outdir}/MultiQC", mode: 'copy'
+    container 'ewels/multiqc:v1.7'
 
-  when: !params.skip_multiqc
+    input:
+    file multiqc from multiqc
 
-  script:
-  """
-  multiqc . -m fastqc -m qualimap -m picard -m gatk -m bcftools
-  """
+    output:
+    file("*") into viz
+
+    when: !params.skip_multiqc
+
+    script:
+    """
+    multiqc . -m fastqc -m qualimap -m picard -m gatk -m bcftools
+    """
+  }
 }
