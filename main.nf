@@ -25,6 +25,7 @@ if (params.help) {
   log.info "===================================================================="
   exit 1
 }
+
 // Validate inputs
 params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : false
 if (params.fasta) {
