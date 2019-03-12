@@ -31,19 +31,19 @@ params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : 
 if (params.fasta) {
     Channel.fromPath(params.fasta)
            .ifEmpty { exit 1, "fasta annotation file not found: ${params.fasta}" }
-           .into { fasta_bwa; fasta_baserecalibrator; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches; fasta_variant_eval }
+           .into { fasta_scatter_intervals; fasta_bwa; fasta_baserecalibrator; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches; fasta_variant_eval }
 }
 params.fai = params.genome ? params.genomes[ params.genome ].fai ?: false : false
 if (params.fai) {
     Channel.fromPath(params.fai)
            .ifEmpty { exit 1, "fai annotation file not found: ${params.fai}" }
-           .into { fai_bwa; fai_baserecalibrator; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches; fai_variant_eval }
+           .into { fai_scatter_intervals; fai_bwa; fai_baserecalibrator; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches; fai_variant_eval }
 }
 params.dict = params.genome ? params.genomes[ params.genome ].dict ?: false : false
 if (params.dict) {
     Channel.fromPath(params.dict)
            .ifEmpty { exit 1, "dict annotation file not found: ${params.dict}" }
-           .into { dict_bwa; dict_baserecalibrator; dict_haplotypecaller; dict_genotypegvcfs; dict_variantrecalibrator_snps; dict_variantrecalibrator_tranches; dict_variant_eval }
+           .into { dict_scatter_intervals; dict_bwa; dict_baserecalibrator; dict_haplotypecaller; dict_genotypegvcfs; dict_variantrecalibrator_snps; dict_variantrecalibrator_tranches; dict_variant_eval }
 }
 params.dbsnp_gz = params.genome ? params.genomes[ params.genome ].dbsnp_gz ?: false : false
 if (params.dbsnp_gz) {
@@ -103,12 +103,7 @@ if (params.bwa_index_sa) {
 if (params.intervals) {
     Channel.fromPath(params.intervals)
            .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.intervals}" }
-           .into { interval_file; split_intervals}
-    
-    split_intervals
-           .splitText()
-           .map { it -> it.trim() }
-           .into { interval_list; intervals }
+           .set { intervals_input }
 }
 if (params.bai) {
     Channel.fromPath(params.bai)
@@ -153,6 +148,88 @@ if (params.reads) {
   exit 1, "Please specify either --reads singleEnd.fastq, --reads_folder pairedReads or --bam myfile.bam"
 }
 
+scattered_intervals_ref = fasta_scatter_intervals.merge(fai_scatter_intervals, dict_scatter_intervals)
+
+process ScatterIntervals {
+    tag "$fasta"
+    container 'broadinstitute/gatk:latest'
+
+    input:
+    set file(fasta), file(fai), file(dict) from scattered_intervals_ref
+
+    output:
+    file("skip_Ns.interval_list") into scattered_intervals
+
+    script:
+    """
+    gatk ScatterIntervalsByNs \
+    -O skip_Ns.interval_list \
+    -R ${fasta} \
+    --MAX_TO_MERGE 1000000 \
+    --OUTPUT_TYPE ACGT \
+    --VERBOSITY ERROR
+    """
+}
+
+process SkipIntervals {
+    tag "$intervals"
+    container 'broadinstitute/gatk:latest'
+
+    input:
+    file(intervals) from scattered_intervals
+
+    output:
+    file("skip_Ns.bed") into skipped_intervals
+
+    script:
+    """
+    grep -v @ ${intervals}
+    #awk '{print \$1":"\$2"-"\$3}'
+    awk 'BEGIN { OFS = "" }{ print \$1,":",\$2,"-",\$3 }' ${intervals} > intervals.interval_list
+
+    gatk IntervalListToBed \
+    -I ${intervals} \
+    -O skip_Ns.bed
+    """
+}
+
+process MakeIntervals {
+    tag "$intervals"
+    container 'broadinstitute/gatk:latest'
+    publishDir "${params.outdir}", mode: 'copy'
+
+    input:
+    file intervals from intervals_input
+    file bed from skipped_intervals
+
+    output:
+    file("ACGTmers_interval_size.interval_list") into expanded_intervals
+
+    script:
+    """
+    cut -f 1-3 $bed > ACGTmers.per-interval.bed
+    awk '{print \$1, \$2, \$3, \$3-\$2}' $bed | sort -k4nr | cut -f 1-3 > ACGTmers_interval_size.bed
+    awk '{print \$1":"\$2+1"-"\$3}' ACGTmers.per-interval.bed > ACGTmers.per-interval.txt
+
+    grep -v @ $intervals | sed 's/:/\\t/' | sed 's/-/\\t/' | cut -f 1-3 > target_temp
+
+    bedtools intersect -a ACGTmers.per-interval.bed -b target_temp -wa | awk '{print \$1":"\$2+1"-"\$3}' | sort -u > ACGTmers_interval_target_intersect.txt
+
+    cp ACGTmers_interval_size.bed ACGTmers_interval_size_temp.txt
+
+    awk 'FNR==NR{a[\$1] = \$1;next}{if (\$1 in a) print \$1}' ACGTmers_interval_size_temp.txt ACGTmers_interval_target_intersect.txt > ACGTmers.per-interval_temp.txt
+    awk 'FNR==NR{a[\$1] = \$1;next}{if (\$1 in a) print \$1}' ACGTmers_interval_target_intersect.txt ACGTmers.per-interval.txt > ACGTmers_interval_size.interval_list
+
+    mv ACGTmers.per-interval_temp.txt ACGTmers.per-interval.txt
+    """
+}
+
+expanded_intervals.into { intervals_file; split_intervals}
+    
+split_intervals
+        .splitText()
+        .map { it -> it.trim() }
+        .set { interval }
 
 if (!params.bam) {
   
@@ -168,7 +245,7 @@ if (!params.bam) {
     output:
     file "*_fastqc.{zip,html}" into fastqc_results
 
-    when: !params.skip_fastqc
+    when: !params.skip_multiqc
 
     script:
     """
@@ -400,17 +477,17 @@ process RunBamQCrecalibrated {
     """
 }
 
-haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, indexed_bam_bqsr, interval_file)
-haplotypecaller = interval_list.combine(haplotypecaller_index)
+haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, indexed_bam_bqsr, intervals_file)
+haplotypecaller = interval.combine(haplotypecaller_index)
 
 process HaplotypeCaller {
-  tag "$interval_list"
+  tag "$interval"
 	container 'broadinstitute/gatk:latest'
 
 	memory threadmem
 
 	input:
-  set val(interval_list), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai), file(interval_file) from haplotypecaller
+  set val(interval), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai), file(intervals_file) from haplotypecaller
 
 	output:
 	file("${sample}.g.vcf") into haplotypecaller_gvcf
@@ -426,13 +503,13 @@ process HaplotypeCaller {
     -O ${sample}.g.vcf \
     -I $bam_bqsr \
     -ERC GVCF \
-    -L $interval_list \
+    -L $interval \
     -isr INTERSECTION \
     --native-pair-hmm-threads 1 \
     -ip 100 \
     --max-alternate-alleles 3 \
     -contamination 0 \
-    -L $interval_file \
+    -L $intervals_file \
     --QUIET
 	"""
 }
