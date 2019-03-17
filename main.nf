@@ -31,13 +31,13 @@ params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : 
 if (params.fasta) {
     Channel.fromPath(params.fasta)
            .ifEmpty { exit 1, "fasta annotation file not found: ${params.fasta}" }
-           .into { fasta_scatter_intervals; fasta_bwa; fasta_baserecalibrator; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches; fasta_variant_eval }
+           .into { fasta_scatter_intervals; fasta_bwa; fasta_baserecalibrator; fasta_bam_to_cram; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches; fasta_variant_eval }
 }
 params.fai = params.genome ? params.genomes[ params.genome ].fai ?: false : false
 if (params.fai) {
     Channel.fromPath(params.fai)
            .ifEmpty { exit 1, "fai annotation file not found: ${params.fai}" }
-           .into { fai_scatter_intervals; fai_bwa; fai_baserecalibrator; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches; fai_variant_eval }
+           .into { fai_scatter_intervals; fai_bwa; fai_baserecalibrator; fai_bam_to_cram; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches; fai_variant_eval }
 }
 params.dict = params.genome ? params.genomes[ params.genome ].dict ?: false : false
 if (params.dict) {
@@ -377,6 +377,7 @@ process MarkDuplicates {
 	set val(name), file("${name}_MarkDup.bam") into bam_markdup_baserecalibrator, bam_markdup_applybqsr
   file "metrics.txt" into markdup_multiqc
 
+  //--CREATE_INDEX true
 	"""
 	gatk MarkDuplicates -I $bam_sort -M metrics.txt -O ${name}_MarkDup.bam
 	"""
@@ -436,7 +437,7 @@ if (!params.bai){
   set val(name), file(bam) from bam_bqsr
 
   output:
-  set val(name), file("${name}.bam"), file("${name}.bam.bai") into indexed_bam_bqsr, indexed_bam_qc
+  set val(name), file("${name}.bam"), file("${name}.bam.bai") into indexed_bam_bqsr, indexed_bam_qc, indexed_bam_to_cram
 
   script:
   """
@@ -446,7 +447,7 @@ if (!params.bai){
   """
   }
 } else {
-  bam_bqsr.merge(bai).into { indexed_bam_bqsr; indexed_bam_qc }
+  bam_bqsr.merge(bai).into { indexed_bam_bqsr; indexed_bam_qc; indexed_bam_to_cram }
 }
 
 process RunBamQCrecalibrated {
@@ -475,6 +476,32 @@ process RunBamQCrecalibrated {
     -outdir ${name}_recalibrated \
     -outformat HTML
     """
+}
+
+bam_to_cram_ref = fasta_bam_to_cram.combine(fai_bam_to_cram)
+bam_to_cram = indexed_bam_to_cram.merge(bam_to_cram_ref)
+
+process BamToCram {
+  tag "$bam"
+	container 'fwip/cramtools:latest'
+  publishDir "${params.outdir}/CRAM", mode: 'copy'
+
+	input:
+  set val(name), file(bam), file(bai), file(fasta), file(fai) from bam_to_cram
+
+	output:
+	file("${name}.cram") into cram
+
+  when:
+  !params.cram
+
+	script:
+	"""
+  java -Xmx${task.memory}M -jar /cramtools/cramtools-3.0.jar cram \
+    --input-bam-file $bam \
+    --reference-fasta-file $fasta \
+    --output-cram-file ${name}.cram
+	"""
 }
 
 haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, indexed_bam_bqsr, intervals_file)
