@@ -31,13 +31,13 @@ params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : 
 if (params.fasta) {
     Channel.fromPath(params.fasta)
            .ifEmpty { exit 1, "fasta annotation file not found: ${params.fasta}" }
-           .into { fasta_scatter_intervals; fasta_bwa; fasta_baserecalibrator; fasta_bam_to_cram; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches; fasta_variant_eval }
+           .into { fasta_scatter_intervals; fasta_bwa; fasta_cram_to_bam; fasta_baserecalibrator; fasta_bam_to_cram; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches; fasta_variant_eval }
 }
 params.fai = params.genome ? params.genomes[ params.genome ].fai ?: false : false
 if (params.fai) {
     Channel.fromPath(params.fai)
            .ifEmpty { exit 1, "fai annotation file not found: ${params.fai}" }
-           .into { fai_scatter_intervals; fai_bwa; fai_baserecalibrator; fai_bam_to_cram; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches; fai_variant_eval }
+           .into { fai_scatter_intervals; fai_bwa; fai_cram_to_bam; fai_baserecalibrator; fai_bam_to_cram; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches; fai_variant_eval }
 }
 params.dict = params.genome ? params.genomes[ params.genome ].dict ?: false : false
 if (params.dict) {
@@ -144,8 +144,13 @@ if (params.reads) {
          .map { file -> tuple(file.baseName, file) }
          .ifEmpty { exit 1, "BAM file not found: ${params.bam}" }
          .set { bam_bqsr }
-} else {
-  exit 1, "Please specify either --reads singleEnd.fastq, --reads_folder pairedReads or --bam myfile.bam"
+} else if (params.cram) {
+  Channel.fromPath(params.cram)
+         .map { file -> tuple(file.baseName, file) }
+         .ifEmpty { exit 1, "CRAM file not found: ${params.cram}" }
+         .set { cram }
+  } else {
+  exit 1, "Please specify either --reads singleEnd.fastq, --reads_folder pairedReads, --bam myfile.bam or --cram myfile.cram"
 }
 
 scattered_intervals_ref = fasta_scatter_intervals.merge(fai_scatter_intervals, dict_scatter_intervals)
@@ -231,7 +236,7 @@ split_intervals
         .map { it -> it.trim() }
         .set { interval }
 
-if (!params.bam) {
+if (!params.bam && !params.cram) {
   
   process fastqc {
     tag "$name"
@@ -427,6 +432,26 @@ process ApplyBQSR {
 }
 }
 
+if (params.cram) {
+  process CramToBam {
+    tag "$cram"
+    container 'lifebitai/samtools:latest'
+
+    input:
+    set val(name), file(cram) from cram
+    file fasta from fasta_cram_to_bam
+    file fai from fai_cram_to_bam
+
+    output:
+    set val(name), file("${name}.bam") into bam_bqsr
+
+    script:
+    """
+    samtools view -T $fasta -b -o ${name}.bam $cram
+    """
+  }
+}
+
 if (!params.bai){
   process IndexBam {
   tag "$bam"
@@ -483,24 +508,21 @@ bam_to_cram = indexed_bam_to_cram.merge(bam_to_cram_ref)
 
 process BamToCram {
   tag "$bam"
-	container 'fwip/cramtools:latest'
+	container 'lifebitai/samtools:latest'
   publishDir "${params.outdir}/CRAM", mode: 'copy'
 
 	input:
   set val(name), file(bam), file(bai), file(fasta), file(fai) from bam_to_cram
 
 	output:
-	file("${name}.cram") into cram
+	file("${name}.cram") into cram_out
 
   when:
   !params.cram
 
 	script:
 	"""
-  java -Xmx${task.memory}M -jar /cramtools/cramtools-3.0.jar cram \
-    --input-bam-file $bam \
-    --reference-fasta-file $fasta \
-    --output-cram-file ${name}.cram
+  samtools view -T $fasta -C -o ${name}.cram $bam
 	"""
 }
 
