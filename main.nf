@@ -562,8 +562,9 @@ process StructuralVariantCallers {
   // TODO: --filter_short_contigs (include when using real data)
 
   """
+  gzip ${fasta} 
   parliament2.py \
-    --ref_genome ${fasta} \
+    --ref_genome ${fasta}.gz \
     --fai ${fai} \
     --bam ${bam_bqsr} \
     --bai ${bai} \
