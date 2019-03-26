@@ -548,6 +548,8 @@ input_structural_variantcaller =  indexed_bam_structural_variantcaller.merge(fas
 
 process StructuralVariantCallers {
   container 'dnanexus/parliament2:latest'
+  publishDir "${params.outdir}/parliament2", mode: 'copy'
+
 
   // 
   memory threadmem
