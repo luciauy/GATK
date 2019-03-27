@@ -571,7 +571,6 @@ process StructuralVariantCallers {
   rm ${fasta}
   mv * /home/dnanexus/in/ 
 
-  gzip ${fasta} 
   parliament2.py \
     --ref_genome fasta.fa.gz \
     --bam ${bam_bqsr} \
