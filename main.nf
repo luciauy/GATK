@@ -436,18 +436,26 @@ if (!params.bai){
   set val(name), file(bam) from bam_bqsr
 
   output:
-  set val(name), file("${name}.bam"), file("${name}.bam.bai") into indexed_bam_bqsr, indexed_bam_qc, indexed_bam_structural_variantcaller
+  set val(name), file("ready/${bam}"), file("ready/${bam}.bai") into indexed_bam_bqsr, indexed_bam_qc, indexed_bam_structural_variantcaller
 
   script:
   """
-  cp $bam bam.bam
-  mv bam.bam ${name}.bam
-  samtools index ${name}.bam
+  mkdir ready
+  [[ `samtools view -H ${bam} | grep '@RG' | wc -l`   > 0 ]] && { mv $bam ready;}|| { picard AddOrReplaceReadGroups \
+  I=${bam} \
+  O=ready/${bam} \
+  RGID=${params.rgid} \
+  RGLB=${params.rglb} \
+  RGPL=${params.rgpl} \
+  RGPU=${params.rgpu} \
+  RGSM=${params.rgsm};}
+  cd ready ;samtools index ${bam};
   """
   }
 } else {
   bam_bqsr.merge(bai).into { indexed_bam_bqsr; indexed_bam_qc; indexed_bam_structural_variantcaller }
 }
+
 
 process RunBamQCrecalibrated {
     tag "$bam"
@@ -564,7 +572,8 @@ process StructuralVariantCallers {
   // TODO: --filter_short_contigs (include when using real data)
 
   """
-  mkdir -p /home/dnanexus/in && mkdir -p /home/dnanexus/out 
+  mkdir -p /home/dnanexus/in
+  mkdir -p /home/dnanexus/out 
 
   cp ${fasta} fasta.fa
   gzip fasta.fa 
