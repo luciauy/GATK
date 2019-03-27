@@ -564,10 +564,16 @@ process StructuralVariantCallers {
   // TODO: --filter_short_contigs (include when using real data)
 
   """
+  mkdir -p /home/dnanexus/in && mkdir -p /home/dnanexus/out 
+
+  cp ${fasta} fasta.fa
+  gzip fasta.fa 
+  rm ${fasta}
+  mv * /home/dnanexus/in/ 
+
   gzip ${fasta} 
   parliament2.py \
-    --ref_genome ${fasta}.gz \
-    --fai ${fai} \
+    --ref_genome fasta.fa.gz \
     --bam ${bam_bqsr} \
     --bai ${bai} \
     --prefix ${name} \
@@ -576,6 +582,8 @@ process StructuralVariantCallers {
     --cnvnator \
     --svviz
   
+  mv /home/dnanexus/out/* .
+
   """
 }
 
