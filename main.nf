@@ -556,10 +556,10 @@ input_structural_variantcaller =  indexed_bam_structural_variantcaller.merge(fas
 
 process StructuralVariantCallers {
   tag "$bam"
-  container 'dnanexus/parliament2:v0.1.9-13-g37d63065'
+  container 'lifebitai/parliament2:latest'
   publishDir "${params.outdir}/parliament2", mode: 'copy'
 
-  memory threadmem
+  cpus threads
 
   input:
   set val(name), file(bam), file(bai), file(fasta), file(fai) from input_structural_variantcaller
@@ -577,7 +577,7 @@ process StructuralVariantCallers {
   cp ${bai} input.bai
   gzip ref.fa
 
-  cp * /home/dnanexus/in
+  mv * /home/dnanexus/in
   cd /home/dnanexus
 
   parliament2.py \
@@ -587,10 +587,7 @@ process StructuralVariantCallers {
     --ref_genome ref.fa.gz \
     --prefix ${name} \
     --breakdancer \
-    --breakseq \
-    --cnvnator \
-    --lumpy \
-    --genotype
+    --cnvnator
 
   mv /home/dnanexus/out/* \$nf_work_dir
   """
