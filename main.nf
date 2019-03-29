@@ -589,14 +589,8 @@ process StructuralVariantCallers {
     --breakdancer \
     --breakseq \
     --cnvnator \
-    --delly_deletion \
-    --delly_insertion \
-    --delly_inversion \
-    --delly_duplication \
     --lumpy \
-    --manta \
-    --genotype \
-    --svviz    
+    --genotype
 
   mv /home/dnanexus/out/* \$nf_work_dir
   """
