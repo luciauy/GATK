@@ -555,43 +555,50 @@ process MergeVCFs {
 input_structural_variantcaller =  indexed_bam_structural_variantcaller.merge(fasta_structural_variantcaller, fai_structural_variantcaller)
 
 process StructuralVariantCallers {
-  container 'dnanexus/parliament2:latest'
+  tag "$bam"
+  container 'dnanexus/parliament2:v0.1.9-13-g37d63065'
   publishDir "${params.outdir}/parliament2", mode: 'copy'
 
-
-  // 
   memory threadmem
 
   input:
-  set  val(name), file(bam_bqsr), file(bai), file(fasta), file(fai) from input_structural_variantcaller
+  set val(name), file(bam), file(bai), file(fasta), file(fai) from input_structural_variantcaller
 
   output:
   file("*") into output_structural_variantcaller
 
   script:
   // TODO: --filter_short_contigs (include when using real data)
-
   """
-  mkdir -p /home/dnanexus/in
-  mkdir -p /home/dnanexus/out 
+  nf_work_dir=\$(pwd)
+  cp ${fasta} ref.fa
+  cp ${fai} ref.fa.fai
+  cp ${bam} input.bam
+  cp ${bai} input.bai
+  gzip ref.fa
 
-  cp ${fasta} fasta.fa
-  gzip fasta.fa 
-  rm ${fasta}
-  mv * /home/dnanexus/in/ 
+  cp * /home/dnanexus/in
+  cd /home/dnanexus
 
   parliament2.py \
-    --ref_genome fasta.fa.gz \
-    --bam ${bam_bqsr} \
-    --bai ${bai} \
+    --bam input.bam \
+    --bai input.bai \
+    --fai ref.fa.fai \
+    --ref_genome ref.fa.gz \
     --prefix ${name} \
     --breakdancer \
     --breakseq \
     --cnvnator \
-    --svviz
-  
-  mv /home/dnanexus/out/* .
+    --delly_deletion \
+    --delly_insertion \
+    --delly_inversion \
+    --delly_duplication \
+    --lumpy \
+    --manta \
+    --genotype \
+    --svviz    
 
+  mv /home/dnanexus/out/* \$nf_work_dir
   """
 }
 
