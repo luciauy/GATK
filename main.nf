@@ -31,19 +31,19 @@ params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : 
 if (params.fasta) {
     Channel.fromPath(params.fasta)
            .ifEmpty { exit 1, "fasta annotation file not found: ${params.fasta}" }
-           .into { fasta_bwa; fasta_baserecalibrator; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches }
+           .into { fasta_scatter_intervals; fasta_bwa; fasta_baserecalibrator; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches; fasta_variant_eval; fasta_structural_variantcaller }
 }
 params.fai = params.genome ? params.genomes[ params.genome ].fai ?: false : false
 if (params.fai) {
     Channel.fromPath(params.fai)
            .ifEmpty { exit 1, "fai annotation file not found: ${params.fai}" }
-           .into { fai_bwa; fai_baserecalibrator; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches }
+           .into { fai_scatter_intervals; fai_bwa; fai_baserecalibrator; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches; fai_variant_eval; fai_structural_variantcaller }
 }
 params.dict = params.genome ? params.genomes[ params.genome ].dict ?: false : false
 if (params.dict) {
     Channel.fromPath(params.dict)
            .ifEmpty { exit 1, "dict annotation file not found: ${params.dict}" }
-           .into { dict_bwa; dict_baserecalibrator; dict_haplotypecaller; dict_genotypegvcfs; dict_variantrecalibrator_snps; dict_variantrecalibrator_tranches }
+           .into { dict_scatter_intervals; dict_bwa; dict_baserecalibrator; dict_haplotypecaller; dict_genotypegvcfs; dict_variantrecalibrator_snps; dict_variantrecalibrator_tranches; dict_variant_eval }
 }
 params.dbsnp_gz = params.genome ? params.genomes[ params.genome ].dbsnp_gz ?: false : false
 if (params.dbsnp_gz) {
@@ -103,9 +103,7 @@ if (params.bwa_index_sa) {
 if (params.intervals) {
     Channel.fromPath(params.intervals)
            .ifEmpty { exit 1, "Interval list file for HaplotypeCaller not found: ${params.intervals}" }
-           .splitText()
-           .map { it -> it.trim() }
-           .into { interval_list; intervals }
+           .set { intervals_input }
 }
 if (params.bai) {
     Channel.fromPath(params.bai)
@@ -126,18 +124,22 @@ if (params.reads) {
       .fromPath(params.reads)
       .map { file -> tuple(file.baseName, file) }
       .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
-      .combine(fasta_bwa)
-      .dump(tag:'input')
-      .into { reads_samplename; reads_bwa }
-  } else if (params.reads_folder){
-    reads="${params.reads_folder}/${params.reads_prefix}_{1,2}.${params.reads_extension}"
-    Channel
-        .fromFilePairs(reads, size: 2)
-        .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
-        .combine(fasta_bwa)
-        .dump(tag:'input')
-        .into { reads_samplename; reads_bwa }
-  } else if (params.bam) {
+      .into { reads_fastqc; reads_files }
+  reads_files
+    .combine(fasta_bwa)
+    .dump(tag:'input')
+    .set { reads_bwa }
+} else if (params.reads_folder){
+  reads="${params.reads_folder}/${params.reads_prefix}_{1,2}.${params.reads_extension}"
+  Channel
+      .fromFilePairs(reads, size: 2)
+      .ifEmpty { exit 1, "Cannot find any reads matching: ${reads}\nNB: Path needs to be enclosed in quotes!\nIf this is single-end data, please specify --singleEnd on the command line." }
+      .into { reads_fastqc; reads_files}
+  reads_files
+    .combine(fasta_bwa)
+    .dump(tag:'input')
+    .set { reads_bwa }
+} else if (params.bam) {
   Channel.fromPath(params.bam)
          .map { file -> tuple(file.baseName, file) }
          .ifEmpty { exit 1, "BAM file not found: ${params.bam}" }
@@ -146,7 +148,111 @@ if (params.reads) {
   exit 1, "Please specify either --reads singleEnd.fastq, --reads_folder pairedReads or --bam myfile.bam"
 }
 
+scattered_intervals_ref = fasta_scatter_intervals.merge(fai_scatter_intervals, dict_scatter_intervals)
+
+process ScatterIntervals {
+    tag "$fasta"
+    container 'broadinstitute/gatk:latest'
+
+    input:
+    set file(fasta), file(fai), file(dict) from scattered_intervals_ref
+
+    output:
+    file("skip_Ns.interval_list") into scattered_intervals
+
+    script:
+    """
+    gatk ScatterIntervalsByNs \
+    -O skip_Ns.interval_list \
+    -R ${fasta} \
+    --MAX_TO_MERGE 1000000 \
+    --OUTPUT_TYPE ACGT \
+    --VERBOSITY ERROR
+    """
+}
+
+process SkipIntervals {
+    tag "$intervals"
+    container 'broadinstitute/gatk:latest'
+
+    input:
+    file(intervals) from scattered_intervals
+
+    output:
+    file("skip_Ns.bed") into skipped_intervals
+
+    script:
+    """
+    grep -v @ ${intervals}
+    #awk '{print \$1":"\$2"-"\$3}'
+    awk 'BEGIN { OFS = "" }{ print \$1,":",\$2,"-",\$3 }' ${intervals} > intervals.interval_list
+
+    gatk IntervalListToBed \
+    -I ${intervals} \
+    -O skip_Ns.bed
+    """
+}
+
+process MakeIntervals {
+    tag "$intervals"
+    container 'broadinstitute/gatk:latest'
+    publishDir "${params.outdir}", mode: 'copy'
+
+    input:
+    file intervals from intervals_input
+    file bed from skipped_intervals
+
+    output:
+    file("ACGTmers_interval_size.interval_list") into expanded_intervals
+
+    script:
+    """
+    cut -f 1-3 $bed > ACGTmers.per-interval.bed
+    awk '{print \$1, \$2, \$3, \$3-\$2}' $bed | sort -k4nr | cut -f 1-3 > ACGTmers_interval_size.bed
+    awk '{print \$1":"\$2+1"-"\$3}' ACGTmers.per-interval.bed > ACGTmers.per-interval.txt
+
+    grep -v @ $intervals | sed 's/:/\\t/' | sed 's/-/\\t/' | cut -f 1-3 > target_temp
+
+    bedtools intersect -a ACGTmers.per-interval.bed -b target_temp -wa | awk '{print \$1":"\$2+1"-"\$3}' | sort -u > ACGTmers_interval_target_intersect.txt
+
+    cp ACGTmers_interval_size.bed ACGTmers_interval_size_temp.txt
+
+    awk 'FNR==NR{a[\$1] = \$1;next}{if (\$1 in a) print \$1}' ACGTmers_interval_size_temp.txt ACGTmers_interval_target_intersect.txt > ACGTmers.per-interval_temp.txt
+    awk 'FNR==NR{a[\$1] = \$1;next}{if (\$1 in a) print \$1}' ACGTmers_interval_target_intersect.txt ACGTmers.per-interval.txt > ACGTmers_interval_size.interval_list
+
+    mv ACGTmers.per-interval_temp.txt ACGTmers.per-interval.txt
+    """
+}
+
+expanded_intervals.into { intervals_file; split_intervals}
+    
+split_intervals
+        .splitText()
+        .map { it -> it.trim() }
+        .set { interval }
+
 if (!params.bam) {
+  
+  process fastqc {
+    tag "$name"
+    publishDir "${params.outdir}/fastqc", mode: 'copy',
+        saveAs: {filename -> filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename"}
+    container 'lifebitai/fastqc'
+
+    input:
+    set val(name), file(reads) from reads_fastqc
+
+    output:
+    file "*_fastqc.{zip,html}" into fastqc_results
+
+    when: !params.skip_multiqc
+
+    script:
+    """
+    fastqc -q $reads
+    """
+  }
+  
   process gunzip_dbsnp {
     tag "$dbsnp_gz"
 
@@ -218,18 +324,46 @@ process BWA {
 
 process BWA_sort {
   tag "$sam"
-	container 'comics/samtools:latest'
+	container 'lifebitai/samtools:latest'
 
 	input:
   set val(name), file(sam) from sam
 
 	output:
-	set val(name), file("${name}-sorted.bam") into bam_sort
+	set val(name), file("${name}-sorted.bam") into bam_sort, bam_sort_qc
 
 	"""
 	samtools sort -o ${name}-sorted.bam -O BAM $sam
 	"""
 
+}
+
+process RunBamQCmapped {
+    tag "$bam"
+    container 'maxulysse/sarek:latest'
+
+    input:
+    set val(name), file(bam) from bam_sort_qc
+
+    output:
+    file("${name}") into bamQCmappedReport
+
+    when: !params.skip_multiqc
+
+    script:
+    // TODO: add --java-mem-size=${task.memory.toGiga()}G
+    """
+    qualimap \
+    bamqc \
+    -bam ${bam} \
+    --paint-chromosome-limits \
+    --genome-gc-distr HUMAN \
+    -nt ${task.cpus} \
+    -skip-duplicated \
+    --skip-dup-mode 0 \
+    -outdir ${name} \
+    -outformat HTML
+    """
 }
 
 process MarkDuplicates {
@@ -261,6 +395,7 @@ process BaseRecalibrator {
 
 	output:
 	set val(name), file("${name}_recal_data.table") into baserecalibrator_table
+  file ("*data.table") into baseRecalibratorReport
 
 	"""
 	gatk BaseRecalibrator \
@@ -301,30 +436,66 @@ if (!params.bai){
   set val(name), file(bam) from bam_bqsr
 
   output:
-  set val(name), file("${name}.bam"), file("${name}.bam.bai") into indexed_bam_bqsr
+  set val(name), file("ready/${bam}"), file("ready/${bam}.bai") into indexed_bam_bqsr, indexed_bam_qc, indexed_bam_structural_variantcaller
 
   script:
   """
-  cp $bam bam.bam
-  mv bam.bam ${name}.bam
-  samtools index ${name}.bam
+  mkdir ready
+  [[ `samtools view -H ${bam} | grep '@RG' | wc -l`   > 0 ]] && { mv $bam ready;}|| { picard AddOrReplaceReadGroups \
+  I=${bam} \
+  O=ready/${bam} \
+  RGID=${params.rgid} \
+  RGLB=${params.rglb} \
+  RGPL=${params.rgpl} \
+  RGPU=${params.rgpu} \
+  RGSM=${params.rgsm};}
+  cd ready ;samtools index ${bam};
   """
   }
 } else {
-  indexed_bam_bqsr = bam_bqsr.merge(bai)
+  bam_bqsr.merge(bai).into { indexed_bam_bqsr; indexed_bam_qc; indexed_bam_structural_variantcaller }
 }
 
-haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, indexed_bam_bqsr)
-haplotypecaller = interval_list.combine(haplotypecaller_index)
+
+process RunBamQCrecalibrated {
+    tag "$bam"
+    container 'maxulysse/sarek:latest'
+
+    input:
+    set val(name), file(bam), file(bai) from indexed_bam_qc
+
+    output:
+    file("${name}_recalibrated") into bamQCrecalibratedReport
+
+    when: !params.skip_multiqc
+
+    script:
+    // TODO: add --java-mem-size=${task.memory.toGiga()}G \
+    """
+    qualimap \
+    bamqc \
+    -bam ${bam} \
+    --paint-chromosome-limits \
+    --genome-gc-distr HUMAN \
+    -nt ${task.cpus} \
+    -skip-duplicated \
+    --skip-dup-mode 0 \
+    -outdir ${name}_recalibrated \
+    -outformat HTML
+    """
+}
+
+haplotypecaller_index = fasta_haplotypecaller.merge(fai_haplotypecaller, dict_haplotypecaller, indexed_bam_bqsr, intervals_file)
+haplotypecaller = interval.combine(haplotypecaller_index)
 
 process HaplotypeCaller {
-  tag "$interval_list"
+  tag "$interval"
 	container 'broadinstitute/gatk:latest'
 
 	memory threadmem
 
 	input:
-  set val(interval_list), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai) from haplotypecaller
+  set val(interval), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai), file(intervals_file) from haplotypecaller
 
 	output:
 	file("${sample}.g.vcf") into haplotypecaller_gvcf
@@ -340,7 +511,14 @@ process HaplotypeCaller {
     -O ${sample}.g.vcf \
     -I $bam_bqsr \
     -ERC GVCF \
-    -L $interval_list
+    -L $interval \
+    -isr INTERSECTION \
+    --native-pair-hmm-threads 1 \
+    -ip 100 \
+    --max-alternate-alleles 3 \
+    -contamination 0 \
+    -L $intervals_file \
+    --QUIET
 	"""
 }
 
@@ -355,7 +533,7 @@ process MergeVCFs {
   val name from sample.collect()
 
 	output:
-	set file("${name[0]}.g.vcf"), file("${name[0]}.g.vcf.idx") into mergevcfs
+	set val("${name[0]}"), file("${name[0]}.g.vcf"), file("${name[0]}.g.vcf.idx") into vcf_bcftools, vcf_variant_eval
 
 	script:
 	"""
@@ -369,47 +547,127 @@ process MergeVCFs {
   --OUTPUT= ${name[0]}.g.vcf
 	"""
 }
+
+// Adding structural variant callers  with parliament2
+// Input data: -- fasta --fai --bam --bai
+// channel with inpu files: fasta, fai from params in the beginning, bam and bai from IndexBam process 
+
+input_structural_variantcaller =  indexed_bam_structural_variantcaller.merge(fasta_structural_variantcaller, fai_structural_variantcaller)
+
+process StructuralVariantCallers {
+  container 'dnanexus/parliament2:latest'
+  publishDir "${params.outdir}/parliament2", mode: 'copy'
+
+
+  // 
+  memory threadmem
+
+  input:
+  set  val(name), file(bam_bqsr), file(bai), file(fasta), file(fai) from input_structural_variantcaller
+
+  output:
+  file("*") into output_structural_variantcaller
+
+  script:
+  // TODO: --filter_short_contigs (include when using real data)
+
+  """
+  mkdir -p /home/dnanexus/in
+  mkdir -p /home/dnanexus/out 
+
+  cp ${fasta} fasta.fa
+  gzip fasta.fa 
+  rm ${fasta}
+  mv * /home/dnanexus/in/ 
+
+  parliament2.py \
+    --ref_genome fasta.fa.gz \
+    --bam ${bam_bqsr} \
+    --bai ${bai} \
+    --prefix ${name} \
+    --breakdancer \
+    --breakseq \
+    --cnvnator \
+    --svviz
+  
+  mv /home/dnanexus/out/* .
+
+  """
 }
 
-if (params.multiqc) {
 
-  process bcftools{
+process bcftools{
   tag "$vcf"
 
   container 'lifebitai/bcftools:latest'
 
   input:
-  set file(vcf),file(index) from mergevcfs
+  set val(name), file(vcf), file(index) from vcf_bcftools
   output:
   file("*") into bcftools_multiqc
+
+  when: !params.skip_multiqc
 
   script:
   """
   bcftools stats $vcf > bcfstats.txt
   """
-  }
+}
+
+variant_eval_ref = fasta_variant_eval.merge(fai_variant_eval, dict_variant_eval)
+variant_eval = vcf_variant_eval.combine(variant_eval_ref)
+
+process VariantEval {
+    tag "$vcf"
+    container 'broadinstitute/gatk:latest'
+
+    input:
+    set val(name), file(vcf), file(index), file(fasta), file(fai), file(dict) from variant_eval
+
+    output:
+    file("${name}.eval.grp") into variantEvalReport
+
+    when: !params.skip_multiqc
+
+    script:
+    // TODO: add dbsnp & gold standard
+    """
+    touch ${name}.eval.grp
+    gatk VariantEval \
+    -R ${fasta} \
+    --eval:${name} $vcf \
+    -O ${name}.eval.grp
+    """
+}
+
+
+if (!params.skip_fastqc && !params.skip_multiqc) {
 
   if (!params.bam) {
-    multiqc = markdup_multiqc.combine(bcftools_multiqc)
+      fastqc_multiqc = fastqc_results.collect().ifEmpty([])
+      multiqc_data = markdup_multiqc.merge(fastqc_multiqc, baseRecalibratorReport, variantEvalReport, bamQCmappedReport, bamQCrecalibratedReport)
+      multiqc = bcftools_multiqc.combine(multiqc_data)
   } else {
-    multiqc = bcftools_multiqc
+    multiqc = bcftools_multiqc.combine(variantEvalReport.merge(bamQCrecalibratedReport))
   }
 
   process multiqc {
-  tag "multiqc_report.html"
+    tag "multiqc_report.html"
 
-  publishDir "${params.outdir}/MultiQC", mode: 'copy'
-  container 'ewels/multiqc:v1.7'
+    publishDir "${params.outdir}/MultiQC", mode: 'copy'
+    container 'ewels/multiqc:v1.7'
 
-  input:
-  file multiqc from multiqc
-  
-  output:
-  file("*") into viz
+    input:
+    file multiqc from multiqc
 
-  script:
-  """
-  multiqc .
-  """
+    output:
+    file("*") into viz
+
+    when: !params.skip_multiqc
+
+    script:
+    """
+    multiqc . -m fastqc -m qualimap -m picard -m gatk -m bcftools
+    """
   }
 }
