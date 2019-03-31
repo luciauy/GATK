@@ -31,13 +31,13 @@ params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : 
 if (params.fasta) {
     Channel.fromPath(params.fasta)
            .ifEmpty { exit 1, "fasta annotation file not found: ${params.fasta}" }
-           .into { fasta_scatter_intervals; fasta_bwa; fasta_baserecalibrator; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches; fasta_variant_eval }
+           .into { fasta_scatter_intervals; fasta_bwa; fasta_baserecalibrator; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches; fasta_variant_eval; fasta_structural_variantcaller }
 }
 params.fai = params.genome ? params.genomes[ params.genome ].fai ?: false : false
 if (params.fai) {
     Channel.fromPath(params.fai)
            .ifEmpty { exit 1, "fai annotation file not found: ${params.fai}" }
-           .into { fai_scatter_intervals; fai_bwa; fai_baserecalibrator; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches; fai_variant_eval }
+           .into { fai_scatter_intervals; fai_bwa; fai_baserecalibrator; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches; fai_variant_eval; fai_structural_variantcaller }
 }
 params.dict = params.genome ? params.genomes[ params.genome ].dict ?: false : false
 if (params.dict) {
@@ -436,18 +436,26 @@ if (!params.bai){
   set val(name), file(bam) from bam_bqsr
 
   output:
-  set val(name), file("${name}.bam"), file("${name}.bam.bai") into indexed_bam_bqsr, indexed_bam_qc
+  set val(name), file("ready/${bam}"), file("ready/${bam}.bai") into indexed_bam_bqsr, indexed_bam_qc, indexed_bam_structural_variantcaller
 
   script:
   """
-  cp $bam bam.bam
-  mv bam.bam ${name}.bam
-  samtools index ${name}.bam
+  mkdir ready
+  [[ `samtools view -H ${bam} | grep '@RG' | wc -l`   > 0 ]] && { mv $bam ready;}|| { picard AddOrReplaceReadGroups \
+  I=${bam} \
+  O=ready/${bam} \
+  RGID=${params.rgid} \
+  RGLB=${params.rglb} \
+  RGPL=${params.rgpl} \
+  RGPU=${params.rgpu} \
+  RGSM=${params.rgsm};}
+  cd ready ;samtools index ${bam};
   """
   }
 } else {
-  bam_bqsr.merge(bai).into { indexed_bam_bqsr; indexed_bam_qc }
+  bam_bqsr.merge(bai).into { indexed_bam_bqsr; indexed_bam_qc; indexed_bam_structural_variantcaller }
 }
+
 
 process RunBamQCrecalibrated {
     tag "$bam"
@@ -539,6 +547,53 @@ process MergeVCFs {
   --OUTPUT= ${name[0]}.g.vcf
 	"""
 }
+
+// Adding structural variant callers  with parliament2
+// Input data: -- fasta --fai --bam --bai
+// channel with inpu files: fasta, fai from params in the beginning, bam and bai from IndexBam process 
+
+input_structural_variantcaller =  indexed_bam_structural_variantcaller.merge(fasta_structural_variantcaller, fai_structural_variantcaller)
+
+process StructuralVariantCallers {
+  tag "$bam"
+  container 'lifebitai/parliament2:latest'
+  publishDir "${params.outdir}/parliament2", mode: 'copy'
+
+  cpus threads
+
+  input:
+  set val(name), file(bam), file(bai), file(fasta), file(fai) from input_structural_variantcaller
+
+  output:
+  file("*") into output_structural_variantcaller
+
+  script:
+  // TODO: --filter_short_contigs (include when using real data)
+  """
+  nf_work_dir=\$(pwd)
+  cp ${fasta} ref.fa
+  cp ${fai} ref.fa.fai
+  cp ${bam} input.bam
+  cp ${bai} input.bai
+  gzip ref.fa
+
+  mv * /home/dnanexus/in
+  cd /home/dnanexus
+
+  parliament2.py \
+    --bam input.bam \
+    --bai input.bai \
+    --fai ref.fa.fai \
+    --ref_genome ref.fa.gz \
+    --prefix ${name} \
+    --breakdancer \
+    --cnvnator \
+    --genotype
+
+  mv /home/dnanexus/out/* \$nf_work_dir
+  """
+}
+
 
 process bcftools{
   tag "$vcf"
