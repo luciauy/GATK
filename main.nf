@@ -114,6 +114,9 @@ if (params.bai) {
 
 // set threadmem equal to total memory divided by number of threads
 int threads = Runtime.getRuntime().availableProcessors()
+
+// create helper memory variable to leave some cores free
+int  all_threads_minus_one = threads - 1
 threadmem = (((Runtime.getRuntime().maxMemory() * 4) / threads) as nextflow.util.MemoryUnit)
 
 /*
@@ -560,7 +563,7 @@ process StructuralVariantCallers {
   container 'lifebitai/parliament2:latest'
   publishDir "${params.outdir}/parliament2", mode: 'copy'
 
-  cpus threads
+  cpus all_threads_minus_one
 
   input:
   set val(name), file(bam), file(bai), file(fasta), file(fai) from input_structural_variantcaller
