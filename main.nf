@@ -580,6 +580,8 @@ process StructuralVariantCallers {
   mv * /home/dnanexus/in
   cd /home/dnanexus
 
+  // Added all callers (9 in total if delly counts as 4 -inv -ins -del -dup) 
+  // Also added `svviz_only_validated_candidates` to cut down the time from not svviz-processing non-validated files
   parliament2.py \
     --bam input.bam \
     --bai input.bai \
@@ -588,8 +590,16 @@ process StructuralVariantCallers {
     --prefix ${name} \
     --breakdancer \
     --cnvnator \
+    --manta \
+    --lumpy \
+    --delly_deletion \
+    --delly_insertion \
+    --delly_inversion \
+    --delly_duplication \
+    --breakseq \
+    --genotype \
     --svviz \
-    --genotype
+    --svviz_only_validated_candidates
 
   mv /home/dnanexus/out/* \$nf_work_dir
   """
