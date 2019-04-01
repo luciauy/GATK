@@ -594,7 +594,6 @@ process StructuralVariantCallers {
     --prefix ${name} \
     --breakdancer \
     --cnvnator \
-    //--manta \
     --lumpy \
     --delly_deletion \
     --delly_insertion \
