@@ -588,6 +588,7 @@ process StructuralVariantCallers {
     --prefix ${name} \
     --breakdancer \
     --cnvnator \
+    --svviz \
     --genotype
 
   mv /home/dnanexus/out/* \$nf_work_dir
