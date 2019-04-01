@@ -2,6 +2,11 @@
 
 VERSION="0.2"
 
+// Added this to prevent cache error. 
+//Check here for error details: https://github.com/nextflow-io/nextflow/issues/625#issuecomment-368931990 
+export NXF_TEMP=$TMPDIR
+
+
 log.info "===================================================================="
 log.info "GATK4 Best Practice Nextflow Pipeline (v${VERSION})                        "
 log.info "===================================================================="
