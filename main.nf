@@ -586,10 +586,7 @@ process StructuralVariantCallers {
     --fai ref.fa.fai \
     --ref_genome ref.fa.gz \
     --prefix ${name} \
-    --delly_insertion \
-    --delly_inversion \
-    --delly_deletion \
-    --delly_duplication \
+    --lumpy \
     --svviz \
     --genotype
 
