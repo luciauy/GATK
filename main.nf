@@ -116,10 +116,6 @@ int threads = Runtime.getRuntime().availableProcessors()
 threadmem = (((Runtime.getRuntime().maxMemory() * 4) / threads) as nextflow.util.MemoryUnit)
 
 
-// create helper memory variable to leave some cores free
-int  all_threads_minus_one = threads - 1
-
-
 /*
  * Create a channel for input read files
  * Dump can be used for debugging purposes, e.g. using the -dump-channels operator on run
@@ -564,7 +560,7 @@ process StructuralVariantCallers {
   container 'lifebitai/parliament2:latest'
   publishDir "${params.outdir}/parliament2", mode: 'copy'
 
-  cpus all_threads_minus_one
+  cpus threadmem
 
   input:
   set val(name), file(bam), file(bai), file(fasta), file(fai) from input_structural_variantcaller
@@ -573,7 +569,7 @@ process StructuralVariantCallers {
   file("*") into output_structural_variantcaller
 
   script:
-  // TODO: --filter_short_contigs (include when using real data)
+  // TODO: --filter_short_contigs (include when using real data) --svviz_only_validated_candidates (both filterings to reduce computations)
   """
   nf_work_dir=\$(pwd)
   cp ${fasta} ref.fa
