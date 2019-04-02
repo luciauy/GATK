@@ -599,8 +599,9 @@ process StructuralVariantCallers {
     --breakdancer \
     --manta \
     --lumpy \
+    --cnvnator \
     --genotype \
-    --svviz \
+    --svviz 
 
 
   mv /home/dnanexus/out/* \$nf_work_dir
