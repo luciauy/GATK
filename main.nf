@@ -586,9 +586,17 @@ process StructuralVariantCallers {
     --fai ref.fa.fai \
     --ref_genome ref.fa.gz \
     --prefix ${name} \
+    --delly_deletion \
+    --delly_insertion \
+    --delly_inversion \
+    --delly_duplication \
     --breakseq \
+    --breakdancer \
+    --manta \
+    --lumpy \
+    --genotype \
     --svviz \
-    --genotype
+
 
   mv /home/dnanexus/out/* \$nf_work_dir
   """
