@@ -586,7 +586,7 @@ process StructuralVariantCallers {
     --fai ref.fa.fai \
     --ref_genome ref.fa.gz \
     --prefix ${name} \
-    --manta \
+    --breakseq \
     --svviz \
     --genotype
 
