@@ -115,6 +115,16 @@ if (params.bai) {
 int threads = Runtime.getRuntime().availableProcessors()
 threadmem = (((Runtime.getRuntime().maxMemory() * 4) / threads) as nextflow.util.MemoryUnit)
 
+// Added soft-coded method but hard-coded value of cpu-sage percentage for StructuralVariantCallers process
+// ToDo: Expose the hard-coded value as parameter if needed in the future for user to allocate resources at will
+
+// Declaring percentage of total cpus (aka 'threads' var) to be allocated to StructuralVariantCallers process
+cpu_percentage = 0.70
+
+// Multiplying & converting java.math.BigDecimal object to java.lang.Integer
+// Check object type with 'my_object.getClass()' method
+// More info here: https://www.geeksforgeeks.org/bigdecimal-intvalue-method-in-java/
+cpus_to_use_StructVarCall    = (cpu_percentage * threads).intValue()
 
 /*
  * Create a channel for input read files
@@ -560,7 +570,8 @@ process StructuralVariantCallers {
   container 'lifebitai/parliament2:latest'
   publishDir "${params.outdir}/parliament2", mode: 'copy'
 
-  cpus threadmem
+  // Allocate cpus to be utilised in this process
+  cpus cpus_to_use_StructVarCall
 
   input:
   set val(name), file(bam), file(bai), file(fasta), file(fai) from input_structural_variantcaller
