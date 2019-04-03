@@ -119,7 +119,7 @@ threadmem = (((Runtime.getRuntime().maxMemory() * 4) / threads) as nextflow.util
 // ToDo: Expose the hard-coded value as parameter if needed in the future for user to allocate resources at will
 
 // Declaring percentage of total cpus (aka 'threads' var) to be allocated to StructuralVariantCallers process
-cpu_percentage = 0.70
+cpu_percentage = 1
 
 // Multiplying & converting java.math.BigDecimal object to java.lang.Integer
 // Check object type with 'my_object.getClass()' method
