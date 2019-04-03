@@ -687,7 +687,28 @@ if (!params.skip_fastqc && !params.skip_multiqc) {
 
     script:
     """
-    multiqc . -m fastqc -m qualimap -m picard -m gatk -m bcftools
+    multiqc . -m fastqc -m qualimap -m picard -m gatk -m bcftools 
     """
   }
 }
+
+
+tree_channel = Channel.fromPath(params.outdir)
+
+
+process tree {
+    tag "outdir_tree.txt"
+    publishDir "${params.outdir}", mode: 'copy'
+    container 'broadinstitute/gatk:latest'
+
+    input:
+    file outdir from tree_channel
+
+    output:
+    file("results_tree.txt") into tree_devoff
+
+    script:
+    """
+    tree > results_tree.txt
+    """
+  }
