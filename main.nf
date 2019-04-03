@@ -362,7 +362,6 @@ process RunBamQCmapped {
     when: !params.skip_multiqc
 
     script:
-    // TODO: add --java-mem-size=${task.memory.toGiga()}G
     """
     qualimap \
     bamqc \
@@ -372,6 +371,7 @@ process RunBamQCmapped {
     -nt ${task.cpus} \
     -skip-duplicated \
     --skip-dup-mode 0 \
+    --java-mem-size=${task.memory.toGiga()}G \
     -outdir ${name} \
     -outformat HTML
     """
@@ -481,7 +481,6 @@ process RunBamQCrecalibrated {
     when: !params.skip_multiqc
 
     script:
-    // TODO: add --java-mem-size=${task.memory.toGiga()}G \
     """
     qualimap \
     bamqc \
@@ -491,6 +490,7 @@ process RunBamQCrecalibrated {
     -nt ${task.cpus} \
     -skip-duplicated \
     --skip-dup-mode 0 \
+    --java-mem-size=${task.memory.toGiga()}G \
     -outdir ${name}_recalibrated \
     -outformat HTML
     """
