@@ -352,6 +352,7 @@ process BWA_sort {
 process RunBamQCmapped {
     tag "$bam"
     container 'maxulysse/sarek:latest'
+    memory threadmem
 
     input:
     set val(name), file(bam) from bam_sort_qc
@@ -371,7 +372,6 @@ process RunBamQCmapped {
     -nt ${task.cpus} \
     -skip-duplicated \
     --skip-dup-mode 0 \
-    --java-mem-size=${task.memory.toGiga()}G \
     -outdir ${name} \
     -outformat HTML
     """
@@ -471,6 +471,7 @@ if (!params.bai){
 process RunBamQCrecalibrated {
     tag "$bam"
     container 'maxulysse/sarek:latest'
+    memory threadmem
 
     input:
     set val(name), file(bam), file(bai) from indexed_bam_qc
@@ -490,7 +491,6 @@ process RunBamQCrecalibrated {
     -nt ${task.cpus} \
     -skip-duplicated \
     --skip-dup-mode 0 \
-    --java-mem-size=${task.memory.toGiga()}G \
     -outdir ${name}_recalibrated \
     -outformat HTML
     """
