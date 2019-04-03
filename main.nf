@@ -112,8 +112,11 @@ if (params.bai) {
 }
 
 // set threadmem equal to total memory divided by number of threads
-int threads = Runtime.getRuntime().availableProcessors()
-threadmem = (((Runtime.getRuntime().maxMemory() * 4) / threads) as nextflow.util.MemoryUnit)
+int threads    = Runtime.getRuntime().availableProcessors()
+threadmem      = (((Runtime.getRuntime().maxMemory() * 4) / threads) as nextflow.util.MemoryUnit)
+
+// More memory for RunBam processes
+threadmem_more = 4 * threadmem
 
 // Added soft-coded method but hard-coded value of cpu-sage percentage for StructuralVariantCallers process
 // ToDo: Expose the hard-coded value as parameter if needed in the future for user to allocate resources at will
@@ -352,7 +355,8 @@ process BWA_sort {
 process RunBamQCmapped {
     tag "$bam"
     container 'maxulysse/sarek:latest'
-    memory threadmem
+    memory threadmem_more 
+    cpus 4
 
     input:
     set val(name), file(bam) from bam_sort_qc
@@ -471,7 +475,8 @@ if (!params.bai){
 process RunBamQCrecalibrated {
     tag "$bam"
     container 'maxulysse/sarek:latest'
-    memory threadmem
+    memory threadmem_more
+    cpus 4
 
     input:
     set val(name), file(bam), file(bai) from indexed_bam_qc
@@ -489,6 +494,7 @@ process RunBamQCrecalibrated {
     --paint-chromosome-limits \
     --genome-gc-distr HUMAN \
     -nt ${task.cpus} \
+    --java-mem-size=${task.memory.toGiga()}G \
     -skip-duplicated \
     --skip-dup-mode 0 \
     -outdir ${name}_recalibrated \
