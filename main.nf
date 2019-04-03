@@ -112,8 +112,22 @@ if (params.bai) {
 }
 
 // set threadmem equal to total memory divided by number of threads
-int threads = Runtime.getRuntime().availableProcessors()
-threadmem = (((Runtime.getRuntime().maxMemory() * 4) / threads) as nextflow.util.MemoryUnit)
+int threads    = Runtime.getRuntime().availableProcessors()
+threadmem      = (((Runtime.getRuntime().maxMemory() * 4) / threads) as nextflow.util.MemoryUnit)
+
+// More memory for RunBam processes
+threadmem_more = 4 * threadmem
+
+// Added soft-coded method but hard-coded value of cpu-sage percentage for StructuralVariantCallers process
+// ToDo: Expose the hard-coded value as parameter if needed in the future for user to allocate resources at will
+
+// Declaring percentage of total cpus (aka 'threads' var) to be allocated to StructuralVariantCallers process
+cpu_percentage = 1
+
+// Multiplying & converting java.math.BigDecimal object to java.lang.Integer
+// Check object type with 'my_object.getClass()' method
+// More info here: https://www.geeksforgeeks.org/bigdecimal-intvalue-method-in-java/
+cpus_to_use_StructVarCall    = (cpu_percentage * threads).intValue()
 
 /*
  * Create a channel for input read files
@@ -260,15 +274,15 @@ if (!params.bam) {
     file dbsnp_gz from dbsnp_gz
     file dbsnp_idx_gz from dbsnp_idx_gz
 
-  	output:
-  	file "*.vcf" into dbsnp, dbsnp_variantrecalibrator_snps, dbsnp_variantrecalibrator_indels
-  	file "*.vcf.idx" into dbsnp_idx, dbsnp_idx_variantrecalibrator_snps, dbsnp_idx_variantrecalibrator_indels
+    output:
+    file "*.vcf" into dbsnp, dbsnp_variantrecalibrator_snps, dbsnp_variantrecalibrator_indels
+    file "*.vcf.idx" into dbsnp_idx, dbsnp_idx_variantrecalibrator_snps, dbsnp_idx_variantrecalibrator_indels
 
     script:
     if ( "${dbsnp_gz}".endsWith(".gz") ) {
      """
      gunzip -d --force $dbsnp_gz
-   	 gunzip -d --force $dbsnp_idx_gz
+     gunzip -d --force $dbsnp_idx_gz
      """
    } else {
      """
@@ -308,39 +322,41 @@ if (!params.bam) {
 
 process BWA {
   tag "$reads"
-	container 'kathrinklee/bwa:latest'
+  container 'kathrinklee/bwa:latest'
 
-	input:
+  input:
   set val(name), file(reads), file(fasta), file(amb), file(ann), file(bwt), file(pac), file(sa) from bwa
 
-	output:
-	set val(name), file("${name}.sam") into sam
+  output:
+  set val(name), file("${name}.sam") into sam
 
-	"""
-	bwa mem -M -R '@RG\\tID:${name}\\tSM:${name}\\tPL:Illumina' $fasta $reads > ${name}.sam
-	"""
+  """
+  bwa mem -M -R '@RG\\tID:${name}\\tSM:${name}\\tPL:Illumina' $fasta $reads > ${name}.sam
+  """
   }
 
 
 process BWA_sort {
   tag "$sam"
-	container 'lifebitai/samtools:latest'
+  container 'lifebitai/samtools:latest'
 
-	input:
+  input:
   set val(name), file(sam) from sam
 
-	output:
-	set val(name), file("${name}-sorted.bam") into bam_sort, bam_sort_qc
+  output:
+  set val(name), file("${name}-sorted.bam") into bam_sort, bam_sort_qc
 
-	"""
-	samtools sort -o ${name}-sorted.bam -O BAM $sam
-	"""
+  """
+  samtools sort -o ${name}-sorted.bam -O BAM $sam
+  """
 
 }
 
 process RunBamQCmapped {
     tag "$bam"
     container 'maxulysse/sarek:latest'
+    memory threadmem_more 
+    cpus 4
 
     input:
     set val(name), file(bam) from bam_sort_qc
@@ -351,7 +367,6 @@ process RunBamQCmapped {
     when: !params.skip_multiqc
 
     script:
-    // TODO: add --java-mem-size=${task.memory.toGiga()}G
     """
     qualimap \
     bamqc \
@@ -368,18 +383,18 @@ process RunBamQCmapped {
 
 process MarkDuplicates {
   tag "$bam_sort"
-	container 'broadinstitute/gatk:latest'
+  container 'broadinstitute/gatk:latest'
 
-	input:
-	set val(name), file(bam_sort) from bam_sort
+  input:
+  set val(name), file(bam_sort) from bam_sort
 
-	output:
-	set val(name), file("${name}_MarkDup.bam") into bam_markdup_baserecalibrator, bam_markdup_applybqsr
+  output:
+  set val(name), file("${name}_MarkDup.bam") into bam_markdup_baserecalibrator, bam_markdup_applybqsr
   file "metrics.txt" into markdup_multiqc
 
-	"""
-	gatk MarkDuplicates -I $bam_sort -M metrics.txt -O ${name}_MarkDup.bam
-	"""
+  """
+  gatk MarkDuplicates -I $bam_sort -M metrics.txt -O ${name}_MarkDup.bam
+  """
 
 }
 
@@ -388,41 +403,41 @@ baserecalibrator = bam_markdup_baserecalibrator.combine(baserecalibrator_index)
 
 process BaseRecalibrator {
   tag "$bam_markdup"
-	container 'broadinstitute/gatk:latest'
+  container 'broadinstitute/gatk:latest'
 
-	input:
+  input:
   set val(name), file(bam_markdup), file(fasta), file(fai), file(dict), file(dbsnp), file(dbsnp_idx), file(golden_indel), file(golden_indel_idx) from baserecalibrator
 
-	output:
-	set val(name), file("${name}_recal_data.table") into baserecalibrator_table
+  output:
+  set val(name), file("${name}_recal_data.table") into baserecalibrator_table
   file ("*data.table") into baseRecalibratorReport
 
-	"""
-	gatk BaseRecalibrator \
-	-I $bam_markdup \
-	--known-sites $dbsnp \
-	--known-sites $golden_indel \
-	-O ${name}_recal_data.table \
-	-R $fasta
-	"""
+  """
+  gatk BaseRecalibrator \
+  -I $bam_markdup \
+  --known-sites $dbsnp \
+  --known-sites $golden_indel \
+  -O ${name}_recal_data.table \
+  -R $fasta
+  """
 }
 
 applybqsr = baserecalibrator_table.join(bam_markdup_applybqsr)
 
 process ApplyBQSR {
   tag "$baserecalibrator_table"
-	container 'broadinstitute/gatk:latest'
+  container 'broadinstitute/gatk:latest'
 
-	input:
+  input:
   set val(name), file(baserecalibrator_table), file(bam_markdup) from applybqsr
 
-	output:
-	set val(name), file("${name}_bqsr.bam") into bam_bqsr
+  output:
+  set val(name), file("${name}_bqsr.bam") into bam_bqsr
 
-	script:
-	"""
-	gatk ApplyBQSR -I $bam_markdup -bqsr $baserecalibrator_table -O ${name}_bqsr.bam
-	"""
+  script:
+  """
+  gatk ApplyBQSR -I $bam_markdup -bqsr $baserecalibrator_table -O ${name}_bqsr.bam
+  """
 }
 }
 
@@ -460,6 +475,8 @@ if (!params.bai){
 process RunBamQCrecalibrated {
     tag "$bam"
     container 'maxulysse/sarek:latest'
+    memory threadmem_more
+    cpus 4
 
     input:
     set val(name), file(bam), file(bai) from indexed_bam_qc
@@ -470,7 +487,6 @@ process RunBamQCrecalibrated {
     when: !params.skip_multiqc
 
     script:
-    // TODO: add --java-mem-size=${task.memory.toGiga()}G \
     """
     qualimap \
     bamqc \
@@ -478,6 +494,7 @@ process RunBamQCrecalibrated {
     --paint-chromosome-limits \
     --genome-gc-distr HUMAN \
     -nt ${task.cpus} \
+    --java-mem-size=${task.memory.toGiga()}G \
     -skip-duplicated \
     --skip-dup-mode 0 \
     -outdir ${name}_recalibrated \
@@ -490,21 +507,21 @@ haplotypecaller = interval.combine(haplotypecaller_index)
 
 process HaplotypeCaller {
   tag "$interval"
-	container 'broadinstitute/gatk:latest'
+  container 'broadinstitute/gatk:latest'
 
-	memory threadmem
+  memory threadmem
 
-	input:
+  input:
   set val(interval), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai), file(intervals_file) from haplotypecaller
 
-	output:
-	file("${sample}.g.vcf") into haplotypecaller_gvcf
+  output:
+  file("${sample}.g.vcf") into haplotypecaller_gvcf
   file("${sample}.g.vcf.idx") into index
   val(sample) into sample
 
-	script:
+  script:
   int mem = (Runtime.getRuntime().totalMemory()) >> 30
-	"""
+  """
   gatk HaplotypeCaller \
     --java-options -Xmx${task.memory.toMega()}M \
     -R $fasta \
@@ -519,24 +536,24 @@ process HaplotypeCaller {
     -contamination 0 \
     -L $intervals_file \
     --QUIET
-	"""
+  """
 }
 
 process MergeVCFs {
   tag "${name[0]}.g.vcf"
-	publishDir "${params.outdir}", mode: 'copy'
-	container 'broadinstitute/gatk:latest'
+  publishDir "${params.outdir}", mode: 'copy'
+  container 'broadinstitute/gatk:latest'
 
-	input:
+  input:
   file ('*.g.vcf') from haplotypecaller_gvcf.collect()
   file ('*.g.vcf.idx') from index.collect()
   val name from sample.collect()
 
-	output:
-	set val("${name[0]}"), file("${name[0]}.g.vcf"), file("${name[0]}.g.vcf.idx") into vcf_bcftools, vcf_variant_eval
+  output:
+  set val("${name[0]}"), file("${name[0]}.g.vcf"), file("${name[0]}.g.vcf.idx") into vcf_bcftools, vcf_variant_eval
 
-	script:
-	"""
+  script:
+  """
   ## make list of input variant files
   for vcf in \$(ls *vcf); do
     echo \$vcf >> input_variant_files.list
@@ -545,7 +562,7 @@ process MergeVCFs {
   gatk MergeVcfs \
   --INPUT= input_variant_files.list \
   --OUTPUT= ${name[0]}.g.vcf
-	"""
+  """
 }
 
 // Adding structural variant callers  with parliament2
@@ -559,7 +576,8 @@ process StructuralVariantCallers {
   container 'lifebitai/parliament2:latest'
   publishDir "${params.outdir}/parliament2", mode: 'copy'
 
-  cpus threads
+  // Allocate cpus to be utilised in this process
+  cpus cpus_to_use_StructVarCall
 
   input:
   set val(name), file(bam), file(bai), file(fasta), file(fai) from input_structural_variantcaller
@@ -568,7 +586,7 @@ process StructuralVariantCallers {
   file("*") into output_structural_variantcaller
 
   script:
-  // TODO: --filter_short_contigs (include when using real data)
+  // TODO: --filter_short_contigs (include when using real data) --svviz_only_validated_candidates (both filterings to reduce computations)
   """
   nf_work_dir=\$(pwd)
   cp ${fasta} ref.fa
@@ -586,9 +604,18 @@ process StructuralVariantCallers {
     --fai ref.fa.fai \
     --ref_genome ref.fa.gz \
     --prefix ${name} \
+    --delly_deletion \
+    --delly_insertion \
+    --delly_inversion \
+    --delly_duplication \
+    --breakseq \
     --breakdancer \
+    --manta \
+    --lumpy \
     --cnvnator \
-    --genotype
+    --genotype \
+    --svviz 
+
 
   mv /home/dnanexus/out/* \$nf_work_dir
   """
@@ -666,7 +693,8 @@ if (!params.skip_fastqc && !params.skip_multiqc) {
 
     script:
     """
-    multiqc . -m fastqc -m qualimap -m picard -m gatk -m bcftools
+    multiqc . -m fastqc -m qualimap -m picard -m gatk -m bcftools 
     """
   }
 }
+
