@@ -699,7 +699,7 @@ tree_channel = Channel.fromPath(params.outdir)
 process tree {
     tag "outdir_tree.txt"
     publishDir "${params.outdir}", mode: 'copy'
-    container 'broadinstitute/gatk:latest'
+    container 'iankoulski/tree:latest'
 
     input:
     file outdir from tree_channel
