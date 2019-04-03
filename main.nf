@@ -692,26 +692,3 @@ if (!params.skip_fastqc && !params.skip_multiqc) {
   }
 }
 
-// 
-tree_channel = Channel.fromPath(params.outdir)
-
-
-process tree {
-    tag "outdir_tree.txt"
-    publishDir "${params.outdir}", mode: 'copy'
-    container 'iankoulski/tree:latest'
-
-    // input from channels I want this process to wait for
-    input:
-    file outdir from tree_channel
-    file multiqc from viz
-    file struct from output_structural_variantcaller
-
-    output:
-    file("results_tree.txt") into tree_devoff
-
-    script:
-    """
-    tree > results_tree.txt
-    """
-  }
