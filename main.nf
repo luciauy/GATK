@@ -584,6 +584,8 @@ process StructuralVariantCallers {
 
   output:
   file("*") into output_structural_variantcaller
+  
+  when: !params.skip_structural_variants
 
   script:
   // TODO: --filter_short_contigs (include when using real data) --svviz_only_validated_candidates (both filterings to reduce computations)
