@@ -31,19 +31,19 @@ params.fasta = params.genome ? params.genomes[ params.genome ].fasta ?: false : 
 if (params.fasta) {
     Channel.fromPath(params.fasta)
            .ifEmpty { exit 1, "fasta annotation file not found: ${params.fasta}" }
-           .into { fasta_scatter_intervals; fasta_bwa; fasta_baserecalibrator; fasta_haplotypecaller; fasta_genotypegvcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches; fasta_variant_eval; fasta_structural_variantcaller }
+           .into { fasta_scatter_intervals; fasta_bwa; fasta_baserecalibrator; fasta_haplotypecaller; fasta_genotypeVcfs; fasta_variantrecalibrator_snps; fasta_variantrecalibrator_tranches; fasta_variant_eval; fasta_structural_variantcaller }
 }
 params.fai = params.genome ? params.genomes[ params.genome ].fai ?: false : false
 if (params.fai) {
     Channel.fromPath(params.fai)
            .ifEmpty { exit 1, "fai annotation file not found: ${params.fai}" }
-           .into { fai_scatter_intervals; fai_bwa; fai_baserecalibrator; fai_haplotypecaller; fai_genotypegvcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches; fai_variant_eval; fai_structural_variantcaller }
+           .into { fai_scatter_intervals; fai_bwa; fai_baserecalibrator; fai_haplotypecaller; fai_genotypeVcfs; fai_variantrecalibrator_snps; fai_variantrecalibrator_tranches; fai_variant_eval; fai_structural_variantcaller }
 }
 params.dict = params.genome ? params.genomes[ params.genome ].dict ?: false : false
 if (params.dict) {
     Channel.fromPath(params.dict)
            .ifEmpty { exit 1, "dict annotation file not found: ${params.dict}" }
-           .into { dict_scatter_intervals; dict_bwa; dict_baserecalibrator; dict_haplotypecaller; dict_genotypegvcfs; dict_variantrecalibrator_snps; dict_variantrecalibrator_tranches; dict_variant_eval }
+           .into { dict_scatter_intervals; dict_bwa; dict_baserecalibrator; dict_haplotypecaller; dict_genotypeVcfs; dict_variantrecalibrator_snps; dict_variantrecalibrator_tranches; dict_variant_eval }
 }
 params.dbsnp_gz = params.genome ? params.genomes[ params.genome ].dbsnp_gz ?: false : false
 if (params.dbsnp_gz) {
@@ -515,8 +515,8 @@ process HaplotypeCaller {
   set val(interval), file(fasta), file(fai), file(dict), val(sample), file(bam_bqsr), file(bai), file(intervals_file) from haplotypecaller
 
   output:
-  file("${sample}.g.vcf") into haplotypecaller_gvcf
-  file("${sample}.g.vcf.idx") into index
+  file("${sample}.vcf") into haplotypecaller_Vcf
+  file("${sample}.vcf.idx") into index
   val(sample) into sample
 
   script:
@@ -525,9 +525,8 @@ process HaplotypeCaller {
   gatk HaplotypeCaller \
     --java-options -Xmx${task.memory.toMega()}M \
     -R $fasta \
-    -O ${sample}.g.vcf \
+    -O ${sample}.vcf \
     -I $bam_bqsr \
-    -ERC GVCF \
     -L $interval \
     -isr INTERSECTION \
     --native-pair-hmm-threads 1 \
@@ -540,17 +539,17 @@ process HaplotypeCaller {
 }
 
 process MergeVCFs {
-  tag "${name[0]}.g.vcf"
+  tag "${name[0]}.vcf"
   publishDir "${params.outdir}", mode: 'copy'
   container 'broadinstitute/gatk:latest'
 
   input:
-  file ('*.g.vcf') from haplotypecaller_gvcf.collect()
-  file ('*.g.vcf.idx') from index.collect()
+  file ('*.vcf') from haplotypecaller_Vcf.collect()
+  file ('*.vcf.idx') from index.collect()
   val name from sample.collect()
 
   output:
-  set val("${name[0]}"), file("${name[0]}.g.vcf"), file("${name[0]}.g.vcf.idx") into vcf_bcftools, vcf_variant_eval
+  set val("${name[0]}"), file("${name[0]}.vcf"), file("${name[0]}.vcf.idx") into vcf_bcftools, vcf_variant_eval
 
   script:
   """
@@ -561,7 +560,7 @@ process MergeVCFs {
 
   gatk MergeVcfs \
   --INPUT= input_variant_files.list \
-  --OUTPUT= ${name[0]}.g.vcf
+  --OUTPUT= ${name[0]}.vcf
   """
 }
 
