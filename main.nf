@@ -9,7 +9,7 @@ log.info "===================================================================="
 params.help = ""
 if (params.help) {
   log.info " "
-  log.info "USAGE: "
+  log.info "USAGE : "
   log.info " "
   log.info "nextflow run oliverSI/GATK4_Best_Practice --fastq1 read_R1.fastq.gz --fastq2 read_R2.fastq.gz"
   log.info " "
